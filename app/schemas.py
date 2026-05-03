@@ -37,6 +37,13 @@ class StatusNotifEnum(str, Enum):
     sudah_dibaca = "sudah_dibaca"
 
 
+# ─── Auth ─────────────────────────────────────────────────────────────────────
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., example="admin")
+    password: str = Field(..., example="admin123")
+
+
 # ─── Akun ─────────────────────────────────────────────────────────────────────
 
 class AkunBase(BaseModel):
@@ -45,7 +52,8 @@ class AkunBase(BaseModel):
     role: RoleEnum = Field(default=RoleEnum.admin)
 
 class AkunCreate(AkunBase):
-    password: str = Field(..., min_length=6, example="rahasia123")
+    # Sesuai tabel akun: password VARCHAR(30)
+    password: str = Field(..., min_length=6, max_length=30, example="rahasia123")
 
 class AkunUpdate(BaseModel):
     username: Optional[str] = Field(None, max_length=100)

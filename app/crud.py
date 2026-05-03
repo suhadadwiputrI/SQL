@@ -11,6 +11,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    return pwd_context.verify(plain_password, hashed_password)
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # AKUN
@@ -246,40 +249,11 @@ def delete_kepsek(db: Session, id_kepsek: int) -> bool:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# ADMIN
-# ══════════════════════════════════════════════════════════════════════════════
-
-def get_admin(db: Session, id_admin: int) -> Optional[models.Admin]:
-    return db.query(models.Admin).filter(models.Admin.id_admin == id_admin).first()
-
-def get_all_admin(db: Session, skip: int = 0, limit: int = 100) -> List[models.Admin]:
-    return db.query(models.Admin).offset(skip).limit(limit).all()
-
-def create_admin(db: Session, admin: schemas.AdminCreate) -> models.Admin:
-    db_admin = models.Admin(**admin.model_dump())
-    db.add(db_admin)
-    db.commit()
-    db.refresh(db_admin)
-    return db_admin
-
-def delete_admin(db: Session, id_admin: int) -> bool:
-    db_admin = get_admin(db, id_admin)
-    if not db_admin:
-        return False
-    db.delete(db_admin)
-    db.commit()
-    return True
-
-
-# ══════════════════════════════════════════════════════════════════════════════
 # RESET PASSWORD
 # ══════════════════════════════════════════════════════════════════════════════
 
 def get_reset_password(db: Session, id_pertanyaan: int) -> Optional[models.ResetPassword]:
     return db.query(models.ResetPassword).filter(models.ResetPassword.id_pertanyaan == id_pertanyaan).first()
-
-def get_reset_password_by_akun(db: Session, id_akun: int) -> Optional[models.ResetPassword]:
-    return db.query(models.ResetPassword).filter(models.ResetPassword.id_akun == id_akun).first()
 
 def create_reset_password(db: Session, rp: schemas.ResetPasswordCreate) -> models.ResetPassword:
     db_rp = models.ResetPassword(**rp.model_dump())

@@ -47,10 +47,15 @@ def health():
 
 @app.post("/login", tags=["Auth"])
 def login(request: schemas.LoginRequest, db: Session = Depends(get_db)):
-    """Login dengan username dan password. Mengembalikan data akun jika berhasil."""
     akun = crud.get_akun_by_username(db, request.username)
     if not akun or not crud.verify_password(request.password, akun.hashed_password):
         raise HTTPException(status_code=401, detail="Username atau password salah!")
+    
+    # ✅ Tambahkan ini: update first_login jadi False setelah login pertama
+    if akun.first_login:
+        crud.update_akun(db, akun.id_akun, schemas.AkunUpdate(first_login=False))
+        db.refresh(akun)
+
     return {
         "message": "Login berhasil",
         "data": schemas.AkunOut.model_validate(akun)

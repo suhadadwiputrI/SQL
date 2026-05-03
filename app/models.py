@@ -106,8 +106,6 @@ class Siswa(Base):
     absensi     = relationship("Absensi", back_populates="siswa")
     catatan     = relationship("CatatanHarian", back_populates="siswa")
     laporan     = relationship("Laporan", back_populates="siswa")
-    pesan_masuk = relationship("Pesan", back_populates="penerima", foreign_keys="Pesan.id_penerima")
-    pesan_keluar = relationship("Pesan", back_populates="pengirim", foreign_keys="Pesan.id_pengirim")
 
     def __repr__(self):
         return f"<Siswa id={self.id_siswa} nama={self.nama_siswa}>"

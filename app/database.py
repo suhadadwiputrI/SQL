@@ -1,28 +1,23 @@
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
 import os
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, declarative_base
 
-# ═══════════════════════════════════════════════════════════════════════════
-# database.py
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "mysql+pymysql://root:12345678@localhost:3306/smartschool_db"
-)
+def _build_url() -> str:
+    url = os.getenv("DATABASE_URL")
+    if url:
+        return url
+    host = os.getenv("MYSQLHOST", "localhost")
+    user = os.getenv("MYSQLUSER", "root")
+    pwd  = os.getenv("MYSQLPASSWORD", "12345678")
+    db   = os.getenv("MYSQLDATABASE", "smartschool_db")
+    port = os.getenv("MYSQLPORT", "3306")
+    return f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}"
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,        # reconnect otomatis jika koneksi putus
-    pool_recycle=3600,         # recycle koneksi tiap 1 jam
-)
-
+engine = create_engine(_build_url(), pool_pre_ping=True, pool_recycle=3600)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
 Base = declarative_base()
 
-
 def get_db():
-    """Dependency FastAPI — yield db session, tutup setelah request selesai."""
     db = SessionLocal()
     try:
         yield db

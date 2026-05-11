@@ -416,4 +416,380 @@ def get_wali_siswa_by_akun(db: Session, id_akun: int) -> Optional[models.WaliSis
         models.WaliSiswa.id_akun == id_akun
     ).first()
     
-    
+# ──────────────────────────────────────────────────────────────────────────────
+# TAMBAHKAN KE crud.py — di bagian bawah file
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── Catatan Harian ───────────────────────────────────────────────────────────
+
+def create_catatan_harian(
+    db: Session,
+    data: "schemas.CatatanHarianCreate",
+    id_guru: int,
+) -> "models.CatatanHarian":
+    """
+    Buat catatan baru.
+    id_guru diambil dari akun guru yang sedang login (bukan dari request body).
+    """
+    catatan = models.CatatanHarian(
+        id_guru  = id_guru,
+        id_siswa = data.id_siswa,
+        id_kelas = data.id_kelas,
+        target   = data.target,
+        judul    = data.judul,
+        foto     = data.foto,
+        isi      = data.isi,
+    )
+    db.add(catatan)
+    db.commit()
+    db.refresh(catatan)
+    return catatan
+
+
+def get_catatan_harian(
+    db: Session,
+    id_catatan: int,
+) -> Optional["models.CatatanHarian"]:
+    return (
+        db.query(models.CatatanHarian)
+        .filter(models.CatatanHarian.id_catatan == id_catatan)
+        .first()
+    )
+
+
+def get_catatan_by_siswa(
+    db: Session,
+    id_siswa: int,
+    id_kelas: Optional[int] = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> List["models.CatatanHarian"]:
+    """
+    Ambil catatan yang VISIBLE untuk seorang wali siswa.
+    Logika visibilitas (OR):
+      1. target = semua_kelas  → semua wali bisa lihat
+      2. target = satu_kelas   → wali bisa lihat jika id_kelas cocok dengan kelas siswa
+      3. target = satu_siswa   → wali bisa lihat jika id_siswa cocok
+    """
+    from sqlalchemy import or_, and_
+
+    conditions = [
+        # 1. Broadcast semua kelas
+        models.CatatanHarian.target == models.TargetCatatanEnum.semua_kelas,
+        # 3. Khusus siswa ini
+        and_(
+            models.CatatanHarian.target   == models.TargetCatatanEnum.satu_siswa,
+            models.CatatanHarian.id_siswa == id_siswa,
+        ),
+    ]
+
+    # 2. Kelas siswa — hanya tambahkan jika id_kelas diketahui
+    if id_kelas is not None:
+        conditions.append(
+            and_(
+                models.CatatanHarian.target   == models.TargetCatatanEnum.satu_kelas,
+                models.CatatanHarian.id_kelas == id_kelas,
+            )
+        )
+
+    return (
+        db.query(models.CatatanHarian)
+        .filter(or_(*conditions))
+        .order_by(models.CatatanHarian.tanggal.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def get_catatan_by_guru(
+    db: Session,
+    id_guru: int,
+    skip: int = 0,
+    limit: int = 50,
+) -> List["models.CatatanHarian"]:
+    """Ambil semua catatan yang dibuat oleh guru tertentu (untuk halaman riwayat guru)."""
+    return (
+        db.query(models.CatatanHarian)
+        .filter(models.CatatanHarian.id_guru == id_guru)
+        .order_by(models.CatatanHarian.tanggal.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def update_catatan_harian(
+    db: Session,
+    id_catatan: int,
+    data: "schemas.CatatanHarianUpdate",
+) -> Optional["models.CatatanHarian"]:
+    catatan = get_catatan_harian(db, id_catatan)
+    if not catatan:
+        return None
+    for key, value in data.model_dump(exclude_unset=True).items():
+        setattr(catatan, key, value)
+    db.commit()
+    db.refresh(catatan)
+    return catatan
+
+
+def delete_catatan_harian(db: Session, id_catatan: int) -> bool:
+    catatan = get_catatan_harian(db, id_catatan)
+    if not catatan:
+        return False
+    db.delete(catatan)
+    db.commit()
+    return True
+
+
+def _build_catatan_out(catatan: "models.CatatanHarian") -> "schemas.CatatanHarianOut":
+    """
+    Helper: konversi ORM object → CatatanHarianOut dengan JOIN manual.
+    Dipanggil dari endpoint setelah query.
+    """
+    nama_guru  = catatan.guru.akun.nama  if catatan.guru  and catatan.guru.akun  else None
+    nama_siswa = catatan.siswa.nama_siswa if catatan.siswa else None
+    nama_kelas = catatan.kelas.nama_kelas if catatan.kelas else None
+
+    return schemas.CatatanHarianOut(
+        id_catatan = catatan.id_catatan,
+        id_guru    = catatan.id_guru,
+        id_siswa   = catatan.id_siswa,
+        id_kelas   = catatan.id_kelas,
+        target     = catatan.target,
+        judul      = catatan.judul,
+        foto       = catatan.foto,
+        isi        = catatan.isi,
+        tanggal    = catatan.tanggal,
+        nama_guru  = nama_guru,
+        nama_siswa = nama_siswa,
+        nama_kelas = nama_kelas,
+    )
+        
+# ─── TAMBAHKAN KE crud.py (di bagian bawah file) ─────────────────────────────
+
+
+# ─── Notifikasi ───────────────────────────────────────────────────────────────
+
+def _buat_notif(
+    db: "Session",
+    id_akun: int,
+    judul: str,
+    pesan: str,
+    tipe: "models.TipeNotifEnum",
+    ref_id: int,
+) -> "models.Notifikasi":
+    """
+    Helper internal: buat satu baris notifikasi.
+    Dipanggil dari fungsi-fungsi kirim_notif_* di bawah.
+    Tidak melakukan db.commit() — commit dilakukan oleh caller.
+    """
+    notif = models.Notifikasi(
+        id_akun = id_akun,
+        judul   = judul,
+        pesan   = pesan,
+        tipe    = tipe,
+        ref_id  = ref_id,
+    )
+    db.add(notif)
+    return notif
+
+
+def kirim_notif_pesan(
+    db: "Session",
+    id_akun_penerima: int,
+    nama_pengirim: str,
+    id_pesan: int,
+) -> "models.Notifikasi":
+    """
+    Buat notifikasi tipe 'pesan' untuk penerima pesan.
+    Dipanggil dari endpoint POST /pesan/ setelah pesan disimpan.
+
+    Cocok untuk GURU (notif pesan masuk dari wali)
+    dan WALI (notif pesan masuk dari guru).
+    """
+    notif = _buat_notif(
+        db       = db,
+        id_akun  = id_akun_penerima,
+        judul    = "Pesan Baru",
+        pesan    = f"Pesan baru dari {nama_pengirim}",
+        tipe     = models.TipeNotifEnum.pesan,
+        ref_id   = id_pesan,
+    )
+    db.commit()
+    db.refresh(notif)
+    return notif
+
+
+def kirim_notif_absensi_batch(
+    db: "Session",
+    id_kelas: int,
+    tanggal_str: str,
+    nama_guru: str,
+    id_absensi_ref: int,
+) -> None:
+    """
+    Buat notifikasi tipe 'absensi' untuk SEMUA wali siswa di kelas tersebut.
+    Dipanggil dari endpoint POST /absensi/batch setelah upsert selesai.
+
+    id_absensi_ref = id_absensi pertama dari batch (sebagai ref_id).
+    Satu notif per wali, bukan per siswa — agar tidak banjir notif.
+    """
+    # Ambil semua siswa di kelas ini yang punya wali
+    siswa_list = (
+        db.query(models.Siswa)
+        .filter(
+            models.Siswa.id_kelas      == id_kelas,
+            models.Siswa.id_wali_siswa != None,  # noqa: E711
+        )
+        .all()
+    )
+
+    for siswa in siswa_list:
+        wali = (
+            db.query(models.WaliSiswa)
+            .filter(models.WaliSiswa.id_wali_siswa == siswa.id_wali_siswa)
+            .first()
+        )
+        if not wali:
+            continue
+
+        _buat_notif(
+            db      = db,
+            id_akun = wali.id_akun,
+            judul   = "Absensi Diperbarui",
+            pesan   = (
+                f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
+                f"telah diisi oleh {nama_guru}"
+            ),
+            tipe    = models.TipeNotifEnum.absensi,
+            ref_id  = id_absensi_ref,
+        )
+
+    db.commit()
+
+
+def kirim_notif_catatan(
+    db: "Session",
+    catatan: "models.CatatanHarian",
+    nama_guru: str,
+) -> None:
+    """
+    Buat notifikasi tipe 'catatan' untuk wali yang berhak melihat catatan.
+    Dipanggil dari endpoint POST /catatan/ setelah catatan disimpan.
+
+    Logika penerima (sama dengan visibilitas catatan):
+      - semua_kelas → semua wali siswa
+      - satu_kelas  → wali siswa di kelas tersebut
+      - satu_siswa  → wali siswa yang bersangkutan saja
+    """
+    wali_id_akun_list: list[int] = []
+
+    if catatan.target == models.TargetCatatanEnum.semua_kelas:
+        # Semua wali siswa
+        wali_list = db.query(models.WaliSiswa).all()
+        wali_id_akun_list = [w.id_akun for w in wali_list]
+
+    elif catatan.target == models.TargetCatatanEnum.satu_kelas:
+        # Wali siswa di kelas ini
+        siswa_list = (
+            db.query(models.Siswa)
+            .filter(
+                models.Siswa.id_kelas      == catatan.id_kelas,
+                models.Siswa.id_wali_siswa != None,  # noqa: E711
+            )
+            .all()
+        )
+        for siswa in siswa_list:
+            wali = (
+                db.query(models.WaliSiswa)
+                .filter(models.WaliSiswa.id_wali_siswa == siswa.id_wali_siswa)
+                .first()
+            )
+            if wali:
+                wali_id_akun_list.append(wali.id_akun)
+
+    elif catatan.target == models.TargetCatatanEnum.satu_siswa:
+        # Wali siswa yang bersangkutan saja
+        siswa = (
+            db.query(models.Siswa)
+            .filter(models.Siswa.id_siswa == catatan.id_siswa)
+            .first()
+        )
+        if siswa and siswa.id_wali_siswa:
+            wali = (
+                db.query(models.WaliSiswa)
+                .filter(models.WaliSiswa.id_wali_siswa == siswa.id_wali_siswa)
+                .first()
+            )
+            if wali:
+                wali_id_akun_list.append(wali.id_akun)
+
+    for id_akun in wali_id_akun_list:
+        _buat_notif(
+            db      = db,
+            id_akun = id_akun,
+            judul   = "Catatan Baru",
+            pesan   = f"Catatan baru dari {nama_guru}: {catatan.judul}",
+            tipe    = models.TipeNotifEnum.catatan,
+            ref_id  = catatan.id_catatan,
+        )
+
+    db.commit()
+
+
+# ─── Query notifikasi ─────────────────────────────────────────────────────────
+
+def get_notifikasi_by_akun(
+    db: "Session",
+    id_akun: int,
+    skip: int = 0,
+    limit: int = 50,
+) -> list["models.Notifikasi"]:
+    """Ambil notifikasi milik satu akun, urut terbaru dulu."""
+    return (
+        db.query(models.Notifikasi)
+        .filter(models.Notifikasi.id_akun == id_akun)
+        .order_by(models.Notifikasi.tanggal.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def count_notif_belum_dibaca(db: "Session", id_akun: int) -> int:
+    """Hitung notifikasi belum dibaca milik akun."""
+    return (
+        db.query(models.Notifikasi)
+        .filter(
+            models.Notifikasi.id_akun == id_akun,
+            models.Notifikasi.status  == models.StatusNotifEnum.belum_dibaca,
+        )
+        .count()
+    )
+
+
+def tandai_notif_dibaca(
+    db: "Session",
+    id_akun: int,
+    id_notif: int | None = None,
+) -> int:
+    """
+    Tandai notifikasi sebagai sudah_dibaca.
+    - id_notif diisi  → tandai hanya notif tersebut (jika milik id_akun)
+    - id_notif = None → tandai SEMUA notif belum_dibaca milik id_akun
+    Mengembalikan jumlah baris yang diupdate.
+    """
+    q = db.query(models.Notifikasi).filter(
+        models.Notifikasi.id_akun == id_akun,
+        models.Notifikasi.status  == models.StatusNotifEnum.belum_dibaca,
+    )
+    if id_notif is not None:
+        q = q.filter(models.Notifikasi.id_notif == id_notif)
+
+    rows = q.all()
+    for n in rows:
+        n.status = models.StatusNotifEnum.sudah_dibaca
+    db.commit()
+    return len(rows)        

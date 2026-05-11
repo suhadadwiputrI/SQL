@@ -4,7 +4,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import uvicorn
 import jwt
 import os
@@ -81,6 +81,7 @@ def _buat_inisial(nama: str) -> str:
 def seed_master_admin():
     db = next(get_db())
     try:
+        # ── Seed akun admin ───────────────────────────────────────────────
         if not crud.get_akun_by_username(db, "test"):
             crud.create_admin_with_akun(db, schemas.AdminCreate(
                 username="test", nama="Admin"))
@@ -88,14 +89,18 @@ def seed_master_admin():
         else:
             print("✅ Akun TEST sudah ada")
 
-        nama_kelas_ada = {k.nama_kelas for k in crud.get_all_kelas(db)}
-        for nama in ["TK A", "TK B"]:
-            if nama not in nama_kelas_ada:
-                crud.create_kelas(db, schemas.KelasCreate(nama_kelas=nama))
-                print(f"✅ Kelas '{nama}' dibuat")
+        # ── Seed kelas — pakai ID tetap (upsert manual) ───────────────────
+        kelas_default = [(1, "TK A"), (2, "TK B")]
+        for id_k, nama_k in kelas_default:
+            existing = db.query(models.Kelas).filter(
+                models.Kelas.id_kelas == id_k).first()
+            if not existing:
+                db.add(models.Kelas(id_kelas=id_k, nama_kelas=nama_k))
+                print(f"✅ Kelas '{nama_k}' (id={id_k}) dibuat")
+        db.commit()
+
     finally:
         db.close()
-
 
 # ─── Root ─────────────────────────────────────────────────────────────────────
 
@@ -812,7 +817,463 @@ def get_semua_wali(
         )
         for w in wali_list
     ]
-    
+   
+# ── Tambahkan ke main.py (setelah endpoint /pesan) ────────────────────────────
+# Import tambahan yang diperlukan di bagian atas main.py:
+#   from datetime import date
+#   (date sudah ada di datetime, tinggal tambahkan ke import)
+
+
+# ─── Absensi ──────────────────────────────────────────────────────────────────
+
+@app.get(
+    "/absensi/kelas/{id_kelas}",
+    response_model=List[schemas.SiswaAbsensiItem],
+    tags=["Absensi"],
+    summary="Daftar siswa satu kelas + status absensi pada tanggal tertentu",
+)
+def get_siswa_absensi(
+    id_kelas: int,
+    tanggal: date,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Dipakai oleh GURU untuk menampilkan daftar siswa satu kelas
+    beserta status absensi mereka pada tanggal tertentu.
+    Jika belum ada data absensi → status = null (belum diisi).
+    """
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+
+    # Validasi kelas
+    kelas = crud.get_kelas(db, id_kelas)
+    if not kelas:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+
+    # Semua siswa di kelas ini
+    siswa_list = (
+        db.query(models.Siswa)
+        .filter(models.Siswa.id_kelas == id_kelas)
+        .order_by(models.Siswa.nama_siswa.asc())
+        .all()
+    )
+
+    # Absensi yang sudah ada untuk tanggal & kelas ini
+    id_siswa_list = [s.id_siswa for s in siswa_list]
+    absensi_map = {}
+    if id_siswa_list:
+        absensi_hari_ini = (
+            db.query(models.Absensi)
+            .filter(
+                models.Absensi.id_siswa.in_(id_siswa_list),
+                models.Absensi.tanggal == tanggal,
+            )
+            .all()
+        )
+        absensi_map = {a.id_siswa: a for a in absensi_hari_ini}
+
+    hasil = []
+    for s in siswa_list:
+        ab = absensi_map.get(s.id_siswa)
+        hasil.append(
+            schemas.SiswaAbsensiItem(
+                id_siswa=s.id_siswa,
+                nama_siswa=s.nama_siswa,
+                status=ab.status if ab else None,
+                keterangan=ab.keterangan if ab else None,
+            )
+        )
+    return hasil
+
+
+@app.post(
+    "/absensi/batch",
+    response_model=List[schemas.AbsensiOut],
+    status_code=200,
+    tags=["Absensi"],
+    summary="Simpan / perbarui absensi seluruh kelas sekaligus (upsert)",
+)
+def simpan_absensi_batch(
+    payload: schemas.AbsensiBatchRequest,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Guru mengirim seluruh absensi satu kelas sekaligus.
+    Jika absensi sudah ada untuk (id_siswa, tanggal) → UPDATE.
+    Jika belum ada → INSERT.
+    """
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+
+    # Ambil id_guru dari akun yang login
+    guru = crud.get_guru_by_akun(db, current_user.id_akun)
+    if not guru:
+        raise HTTPException(status_code=404, detail="Data guru tidak ditemukan")
+
+    hasil = []
+    for item in payload.data:
+        # Cek apakah siswa ini memang ada di kelas yang dimaksud
+        siswa = crud.get_siswa(db, item.id_siswa)
+        if not siswa or siswa.id_kelas != payload.id_kelas:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Siswa {item.id_siswa} tidak ada di kelas {payload.id_kelas}",
+            )
+
+        # Upsert: cari record yang sudah ada
+        existing = (
+            db.query(models.Absensi)
+            .filter(
+                models.Absensi.id_siswa == item.id_siswa,
+                models.Absensi.tanggal == payload.tanggal,
+            )
+            .first()
+        )
+
+        if existing:
+            # UPDATE
+            existing.status     = item.status
+            existing.keterangan = item.keterangan
+            existing.id_guru    = guru.id_guru
+            db.flush()
+            hasil.append(existing)
+        else:
+            # INSERT
+            ab = models.Absensi(
+                id_siswa   = item.id_siswa,
+                id_guru    = guru.id_guru,
+                tanggal    = payload.tanggal,
+                status     = item.status,
+                keterangan = item.keterangan,
+            )
+            db.add(ab)
+            db.flush()
+            hasil.append(ab)
+
+    db.commit()
+    for ab in hasil:
+        db.refresh(ab)
+
+    return hasil
+
+
+@app.get(
+    "/absensi/siswa/{id_siswa}",
+    response_model=List[schemas.AbsensiHarianSiswaOut],
+    tags=["Absensi"],
+    summary="Riwayat absensi satu siswa untuk bulan & tahun tertentu",
+)
+def get_absensi_siswa(
+    id_siswa: int,
+    bulan: int,
+    tahun: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Dipakai oleh WALI SISWA di FragmentAbsensi untuk mengisi kalender.
+    Mengembalikan semua record absensi siswa pada bulan & tahun tertentu.
+    """
+    if current_user.role not in (models.RoleEnum.wali_siswa, models.RoleEnum.guru,
+                                  models.RoleEnum.kepala_sekolah, models.RoleEnum.admin):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    # Wali hanya boleh lihat siswa anaknya sendiri
+    if current_user.role == models.RoleEnum.wali_siswa:
+        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        if not wali or wali.id_siswa != id_siswa:
+            raise HTTPException(status_code=403, detail="Anda hanya dapat melihat absensi anak Anda")
+
+    from sqlalchemy import extract
+    records = (
+        db.query(models.Absensi)
+        .filter(
+            models.Absensi.id_siswa == id_siswa,
+            extract("month", models.Absensi.tanggal) == bulan,
+            extract("year",  models.Absensi.tanggal) == tahun,
+        )
+        .order_by(models.Absensi.tanggal.asc())
+        .all()
+    )
+
+    hasil = []
+    for ab in records:
+        nama_guru = None
+        if ab.guru and ab.guru.akun:
+            nama_guru = ab.guru.akun.nama
+        hasil.append(
+            schemas.AbsensiHarianSiswaOut(
+                id_absensi=ab.id_absensi,
+                id_siswa=ab.id_siswa,
+                id_guru=ab.id_guru,
+                tanggal=ab.tanggal,
+                status=ab.status,
+                keterangan=ab.keterangan,
+                nama_guru=nama_guru,
+            )
+        )
+    return hasil
+
+
+@app.get(
+    "/absensi/siswa/{id_siswa}/ringkasan",
+    response_model=schemas.RingkasanAbsensiOut,
+    tags=["Absensi"],
+    summary="Rekap jumlah hadir/sakit/izin/alpha satu siswa per bulan",
+)
+def get_ringkasan_absensi_siswa(
+    id_siswa: int,
+    bulan: int,
+    tahun: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role not in (models.RoleEnum.wali_siswa, models.RoleEnum.guru,
+                                  models.RoleEnum.kepala_sekolah, models.RoleEnum.admin):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    if current_user.role == models.RoleEnum.wali_siswa:
+        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        if not wali or wali.id_siswa != id_siswa:
+            raise HTTPException(status_code=403, detail="Anda hanya dapat melihat absensi anak Anda")
+
+    from sqlalchemy import extract
+    records = (
+        db.query(models.Absensi)
+        .filter(
+            models.Absensi.id_siswa == id_siswa,
+            extract("month", models.Absensi.tanggal) == bulan,
+            extract("year",  models.Absensi.tanggal) == tahun,
+        )
+        .all()
+    )
+
+    rekap = schemas.RingkasanAbsensiOut(bulan=bulan, tahun=tahun)
+    for ab in records:
+        if   ab.status == models.StatusAbsensiEnum.hadir: rekap.hadir += 1
+        elif ab.status == models.StatusAbsensiEnum.sakit: rekap.sakit += 1
+        elif ab.status == models.StatusAbsensiEnum.izin:  rekap.izin  += 1
+        elif ab.status == models.StatusAbsensiEnum.alpha: rekap.alpha += 1
+    return rekap    
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TAMBAHKAN KE main.py — sebelum baris  if __name__ == "__main__":
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── Catatan Harian ───────────────────────────────────────────────────────────
+
+@app.post(
+    "/catatan/",
+    response_model=schemas.CatatanHarianOut,
+    status_code=201,
+    tags=["Catatan Harian"],
+    summary="Guru membuat catatan (target: semua_kelas / satu_kelas / satu_siswa)",
+)
+def buat_catatan(
+    payload: schemas.CatatanHarianCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Hanya GURU yang dapat membuat catatan.
+
+    **Aturan target:**
+    | target        | id_kelas | id_siswa | Penerima                          |
+    |---------------|----------|----------|-----------------------------------|
+    | semua_kelas   | null     | null     | Semua wali siswa (TK A + TK B)    |
+    | satu_kelas    | diisi    | null     | Wali siswa di kelas tersebut      |
+    | satu_siswa    | null     | diisi    | Wali siswa yang bersangkutan saja |
+    """
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
+
+    guru = crud.get_guru_by_akun(db, current_user.id_akun)
+    if not guru:
+        raise HTTPException(status_code=404, detail="Data guru tidak ditemukan")
+
+    # Validasi referensi kelas (jika target = satu_kelas)
+    if payload.target == models.TargetCatatanEnum.satu_kelas:
+        if not crud.get_kelas(db, payload.id_kelas):
+            raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+
+    # Validasi referensi siswa (jika target = satu_siswa)
+    if payload.target == models.TargetCatatanEnum.satu_siswa:
+        if not crud.get_siswa(db, payload.id_siswa):
+            raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+
+    catatan = crud.create_catatan_harian(db, data=payload, id_guru=guru.id_guru)
+    return crud._build_catatan_out(catatan)
+
+
+@app.get(
+    "/catatan/siswa/{id_siswa}",
+    response_model=schemas.CatatanListResponse,
+    tags=["Catatan Harian"],
+    summary="Ambil catatan yang visible untuk seorang siswa (dipakai wali)",
+)
+def get_catatan_siswa(
+    id_siswa: int,
+    skip:  int = 0,
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Mengembalikan semua catatan yang bisa dilihat oleh wali siswa:
+    - Catatan target **semua_kelas** (broadcast)
+    - Catatan target **satu_kelas** yang kelasnya sama dengan siswa
+    - Catatan target **satu_siswa** yang id_siswanya cocok
+
+    Wali hanya boleh mengakses catatan anak kandungnya sendiri.
+    Guru / admin / kepsek boleh mengakses siapa saja.
+    """
+    siswa = crud.get_siswa(db, id_siswa)
+    if not siswa:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+
+    # Wali hanya boleh lihat catatan anak sendiri
+    if current_user.role == models.RoleEnum.wali_siswa:
+        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        if not wali or wali.id_siswa != id_siswa:
+            raise HTTPException(
+                status_code=403,
+                detail="Anda hanya dapat melihat catatan anak Anda"
+            )
+
+    catatan_list = crud.get_catatan_by_siswa(
+        db,
+        id_siswa=id_siswa,
+        id_kelas=siswa.id_kelas,
+        skip=skip,
+        limit=limit,
+    )
+
+    return schemas.CatatanListResponse(
+        total=len(catatan_list),
+        data=[crud._build_catatan_out(c) for c in catatan_list],
+    )
+
+
+@app.get(
+    "/catatan/guru/",
+    response_model=schemas.CatatanListResponse,
+    tags=["Catatan Harian"],
+    summary="Riwayat catatan yang dibuat oleh guru yang sedang login",
+)
+def get_catatan_by_guru_login(
+    skip:  int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Guru melihat semua catatan yang pernah ia buat (history / riwayat).
+    """
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+
+    guru = crud.get_guru_by_akun(db, current_user.id_akun)
+    if not guru:
+        raise HTTPException(status_code=404, detail="Data guru tidak ditemukan")
+
+    catatan_list = crud.get_catatan_by_guru(db, id_guru=guru.id_guru, skip=skip, limit=limit)
+    return schemas.CatatanListResponse(
+        total=len(catatan_list),
+        data=[crud._build_catatan_out(c) for c in catatan_list],
+    )
+
+
+@app.get(
+    "/catatan/{id_catatan}",
+    response_model=schemas.CatatanHarianOut,
+    tags=["Catatan Harian"],
+    summary="Detail satu catatan",
+)
+def get_catatan_detail(
+    id_catatan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    catatan = crud.get_catatan_harian(db, id_catatan)
+    if not catatan:
+        raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
+
+    # Wali: pastikan catatan ini memang visible untuk anaknya
+    if current_user.role == models.RoleEnum.wali_siswa:
+        wali  = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        siswa = crud.get_siswa(db, wali.id_siswa) if wali and wali.id_siswa else None
+
+        visible = False
+        if catatan.target == models.TargetCatatanEnum.semua_kelas:
+            visible = True
+        elif catatan.target == models.TargetCatatanEnum.satu_kelas:
+            visible = siswa is not None and siswa.id_kelas == catatan.id_kelas
+        elif catatan.target == models.TargetCatatanEnum.satu_siswa:
+            visible = wali is not None and wali.id_siswa == catatan.id_siswa
+
+        if not visible:
+            raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    return crud._build_catatan_out(catatan)
+
+
+@app.put(
+    "/catatan/{id_catatan}",
+    response_model=schemas.CatatanHarianOut,
+    tags=["Catatan Harian"],
+    summary="Edit judul / isi / foto catatan (hanya guru pembuat)",
+)
+def update_catatan(
+    id_catatan: int,
+    payload: schemas.CatatanHarianUpdate,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengedit catatan")
+
+    catatan = crud.get_catatan_harian(db, id_catatan)
+    if not catatan:
+        raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
+
+    # Hanya guru pembuat yang boleh edit
+    guru = crud.get_guru_by_akun(db, current_user.id_akun)
+    if not guru or catatan.id_guru != guru.id_guru:
+        raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
+
+    updated = crud.update_catatan_harian(db, id_catatan, payload)
+    return crud._build_catatan_out(updated)
+
+
+@app.delete(
+    "/catatan/{id_catatan}",
+    tags=["Catatan Harian"],
+    summary="Hapus catatan (hanya guru pembuat atau admin)",
+)
+def delete_catatan(
+    id_catatan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    catatan = crud.get_catatan_harian(db, id_catatan)
+    if not catatan:
+        raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
+
+    # Admin boleh hapus semua; guru hanya boleh hapus miliknya
+    if current_user.role == models.RoleEnum.admin:
+        pass  # diizinkan
+    elif current_user.role == models.RoleEnum.guru:
+        guru = crud.get_guru_by_akun(db, current_user.id_akun)
+        if not guru or catatan.id_guru != guru.id_guru:
+            raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
+    else:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    crud.delete_catatan_harian(db, id_catatan)
+    return {"message": f"Catatan {id_catatan} berhasil dihapus"}
 
 
 if __name__ == "__main__":

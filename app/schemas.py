@@ -34,6 +34,7 @@ class Token(BaseModel):
 class LoginRequest(BaseModel):
     username: str = Field(..., example="qoulansadid")
     password: str = Field(..., example="123")
+    device_id: Optional[str] = Field(None, max_length=64, example="a1b2c3d4e5f6")
 
 
 # ─── Akun ─────────────────────────────────────────────────────────────────────
@@ -525,4 +526,4 @@ class BacaNotifRequest(BaseModel):
     id_notif: Optional[int] = Field(
         None,
         description="ID notif yang ingin ditandai. Kosongkan untuk tandai semua.",
-    )            
+    )

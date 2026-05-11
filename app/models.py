@@ -39,6 +39,7 @@ class Akun(Base):
     nama        = Column(String(100), nullable=False)
     role        = Column(Enum(RoleEnum), default=RoleEnum.admin, nullable=False)
     first_login = Column(Boolean, default=True, nullable=False)
+    device_id   = Column(String(64), nullable=True)
     created_at  = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at  = Column(TIMESTAMP, onupdate=func.now(), nullable=True)
     reset_password = relationship("ResetPassword", back_populates="akun", cascade="all, delete-orphan")
@@ -274,4 +275,4 @@ class Laporan(Base):
     created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
 
     siswa = relationship("Siswa", foreign_keys=[id_siswa])
-    guru  = relationship("Guru",  foreign_keys=[id_guru])        
+    guru  = relationship("Guru",  foreign_keys=[id_guru])

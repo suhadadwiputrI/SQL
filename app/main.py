@@ -126,11 +126,34 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED,
                             detail="Username atau password salah",
                             headers={"WWW-Authenticate": "Bearer"})
+
+    # ── Device lock: tolak login jika akun aktif di device lain ──────────────
+    device_id = payload.device_id
+    if device_id and akun.device_id and akun.device_id != device_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Akun ini sedang digunakan di perangkat lain. "
+                   "Logout terlebih dahulu sebelum login di sini.",
+        )
+
+    # Simpan / perbarui device_id
+    if device_id:
+        akun.device_id = device_id
+        db.commit()
+
     token = create_access_token({
         "id_akun": akun.id_akun, "username": akun.username,
         "role": akun.role.value, "first_login": akun.first_login,
     })
     return {"access_token": token, "token_type": "bearer", "first_login": akun.first_login}
+
+@app.post("/auth/logout", tags=["Auth"])
+def logout(db: Session = Depends(get_db),
+           current_user: models.Akun = Depends(get_current_user)):
+    # Hapus device_id agar akun bisa login di device lain setelah logout
+    current_user.device_id = None
+    db.commit()
+    return {"message": "Logout berhasil"}
 
 @app.get("/auth/me", tags=["Auth"])
 def me(current_user: models.Akun = Depends(get_current_user)):

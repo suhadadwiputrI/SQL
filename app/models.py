@@ -214,27 +214,6 @@ class TargetCatatanEnum(str, enum.Enum):
 
 
 class CatatanHarian(Base):
-    """
-    Tabel catatan_harian
-    ┌──────────────────┬───────────┬────────┐
-    │ Nama Field       │ Tipe Data │ Ukuran │
-    ├──────────────────┼───────────┼────────┤
-    │ id_catatan       │ INT       │ 13     │
-    │ id_guru          │ INT       │ 13     │  ← siapa yang membuat catatan
-    │ id_siswa         │ INT       │ 13     │  ← NULL jika target semua/kelas
-    │ id_kelas         │ INT       │ 13     │  ← NULL jika target semua/siswa
-    │ target           │ ENUM      │ -      │  semua_kelas | satu_kelas | satu_siswa
-    │ judul            │ VARCHAR   │ 50     │
-    │ foto             │ VARCHAR   │ 50     │  nullable
-    │ isi              │ TEXT      │ -      │
-    │ tanggal          │ TIMESTAMP │ -      │  server_default = now()
-    └──────────────────┴───────────┴────────┘
-    
-    Logika pengiriman:
-      - target = semua_kelas  → id_siswa=NULL, id_kelas=NULL  → visible ke semua wali
-      - target = satu_kelas   → id_siswa=NULL, id_kelas=<id>  → visible ke wali di kelas tsb
-      - target = satu_siswa   → id_siswa=<id>, id_kelas=NULL  → visible ke wali siswa tsb saja
-    """
     __tablename__ = "catatan_harian"
 
     id_catatan = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
@@ -266,30 +245,11 @@ class StatusNotifEnum(str, enum.Enum):
 
 
 class Notifikasi(Base):
-    """
-    Tabel notifikasi per akun.
-
-    Logika pengiriman:
-      - tipe=pesan    → id_akun = penerima pesan
-                        ref_id  = id_pesan
-                        GURU dan WALI sama-sama dapat notif ini
-
-      - tipe=absensi  → id_akun = id_akun wali siswa yang bersangkutan
-                        ref_id  = id_absensi (salah satu dari batch, atau 0 untuk batch)
-                        Hanya WALI yang dapat notif ini
-
-      - tipe=catatan  → id_akun = id_akun setiap wali yang berhak melihat catatan
-                        ref_id  = id_catatan
-                        Hanya WALI yang dapat notif ini
-
-    id_akun + tipe + ref_id tidak dijadikan unique karena satu catatan bisa
-    dikirim ulang (edit), namun pengiriman duplikat dicegah di layer crud.
-    """
     __tablename__ = "notifikasi"
 
     id_notif = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
     id_akun  = Column(INTEGER(13), ForeignKey("akun.id_akun", ondelete="CASCADE"),
-                      nullable=False, index=True)
+                    nullable=False, index=True)
     judul    = Column(String(50),  nullable=False)
     pesan    = Column(String(100), nullable=False)
     tipe     = Column(Enum(TipeNotifEnum),   nullable=False)
@@ -298,4 +258,20 @@ class Notifikasi(Base):
     status   = Column(Enum(StatusNotifEnum),
                       default=StatusNotifEnum.belum_dibaca, nullable=False)
 
-    akun = relationship("Akun", foreign_keys=[id_akun])        
+    akun = relationship("Akun", foreign_keys=[id_akun])    
+    
+    
+class Laporan(Base):
+    __tablename__ = "laporan"
+
+    id_laporan     = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
+    id_siswa       = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"), nullable=False, index=True)
+    id_guru        = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
+    periode        = Column(String(20),  nullable=False)
+    tanggal_dibuat = Column(Date,        nullable=False)
+    status         = Column(Boolean,     default=False, nullable=False)
+    keterangan     = Column(String(100), nullable=True)
+    created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
+
+    siswa = relationship("Siswa", foreign_keys=[id_siswa])
+    guru  = relationship("Guru",  foreign_keys=[id_guru])        

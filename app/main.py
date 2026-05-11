@@ -8,6 +8,10 @@ from datetime import datetime, timedelta, date
 import uvicorn
 import jwt
 import os
+from fastapi.staticfiles import StaticFiles
+from fastapi import UploadFile, File
+import shutil
+import uuid
 
 from app.database import engine, get_db, Base
 from app import models, schemas, crud
@@ -18,6 +22,9 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
+FOTO_DIR = "static/foto"
+os.makedirs(FOTO_DIR, exist_ok=True)
+
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
@@ -27,12 +34,14 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], allow_credentials=True,
     allow_methods=["*"], allow_headers=["*"],
 )
+
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -569,6 +578,12 @@ def kirim_pesan(
     db.add(pesan)
     db.commit()
     db.refresh(pesan)
+    crud.kirim_notif_pesan(
+    db=db,
+    id_akun_penerima=data.id_penerima,
+    nama_pengirim=current_user.nama,
+    id_pesan=pesan.id_pesan,
+    )
     return pesan
 
 
@@ -1275,6 +1290,116 @@ def delete_catatan(
     crud.delete_catatan_harian(db, id_catatan)
     return {"message": f"Catatan {id_catatan} berhasil dihapus"}
 
+@app.post(
+    "/catatan/{id_catatan}/upload-foto",
+    tags=["Catatan Harian"],
+    summary="Upload foto untuk catatan (hanya guru pembuat)",
+)
+async def upload_foto_catatan(
+    id_catatan: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat upload foto")
 
+    catatan = crud.get_catatan_harian(db, id_catatan)
+    if not catatan:
+        raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
+
+    guru = crud.get_guru_by_akun(db, current_user.id_akun)
+    if not guru or catatan.id_guru != guru.id_guru:
+        raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
+
+    # Hapus foto lama jika ada
+    if catatan.foto:
+        lama = os.path.join(FOTO_DIR, catatan.foto)
+        if os.path.exists(lama):
+            os.remove(lama)
+
+    # Simpan file baru
+    ext      = os.path.splitext(file.filename)[1].lower()
+    nama_file = f"{uuid.uuid4().hex}{ext}"
+    dest      = os.path.join(FOTO_DIR, nama_file)
+
+    with open(dest, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    # Update kolom foto di DB
+    catatan.foto = nama_file
+    db.commit()
+    db.refresh(catatan)
+
+    return {
+        "nama_file": nama_file,
+        "url": f"/static/foto/{nama_file}",
+    }
+    
+    # ── Endpoint GET /notifikasi/ ─────────────────────────────────────────────
+ 
+@app.get(
+    "/notifikasi/",
+    response_model=schemas.NotifikasiListResponse,
+    tags=["Notifikasi"],
+    summary="Ambil semua notifikasi milik akun yang sedang login",
+)
+def get_notifikasi(
+    skip:  int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Mengembalikan daftar notifikasi milik akun yang sedang login,
+    diurutkan dari yang terbaru.
+ 
+    Untuk GURU: hanya muncul notifikasi tipe 'pesan'.
+    Field `ref_id` berisi id_pesan sehingga Android bisa langsung
+    membuka percakapan yang sesuai.
+ 
+    Response:
+    - `total_belum_dibaca`: jumlah notif yang statusnya 'belum_dibaca'
+    - `data`: list notifikasi (id_notif, judul, pesan, tipe, ref_id, tanggal, status)
+    """
+    notif_list = crud.get_notifikasi_by_akun(
+        db, current_user.id_akun, skip=skip, limit=limit
+    )
+    total_belum = crud.count_notif_belum_dibaca(db, current_user.id_akun)
+ 
+    return schemas.NotifikasiListResponse(
+        total_belum_dibaca=total_belum,
+        data=notif_list,
+    )
+ 
+ 
+# ── Endpoint PUT /notifikasi/baca ─────────────────────────────────────────
+ 
+@app.put(
+    "/notifikasi/baca",
+    tags=["Notifikasi"],
+    summary="Tandai notifikasi sebagai sudah dibaca",
+)
+def tandai_notif_dibaca(
+    payload: schemas.BacaNotifRequest,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Tandai notifikasi sebagai 'sudah_dibaca'.
+ 
+    - Kirim `{ "id_notif": 5 }` → tandai hanya notif id 5.
+    - Kirim `{ "id_notif": null }` atau body kosong `{}` → tandai SEMUA notif belum dibaca.
+ 
+    Hanya notif milik akun yang sedang login yang akan diubah.
+    Mengembalikan jumlah notif yang berhasil diubah.
+    """
+    jumlah = crud.tandai_notif_dibaca(
+        db,
+        id_akun  = current_user.id_akun,
+        id_notif = payload.id_notif,
+    )
+    return {"message": f"{jumlah} notifikasi ditandai sudah dibaca", "jumlah": jumlah}
+    
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

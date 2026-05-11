@@ -140,16 +140,6 @@ class GuruUpdate(BaseModel):
     list_id_kelas: Optional[List[int]] = Field(None,
                                                description="Kirim [] untuk hapus semua kelas. Maks 2.")
 
-class GuruOut(BaseModel):
-    id_guru:       int
-    id_akun:       int
-    nip:           Optional[str]       = None
-    list_id_kelas: Optional[List[int]] = None  
-    akun:          Optional[AkunOut]   = None
-
-    class Config:
-        from_attributes = True
-
 
 # ─── Admin ────────────────────────────────────────────────────────────────────
 

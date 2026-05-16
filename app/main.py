@@ -9,7 +9,7 @@ from typing import List, Optional
 
 import jwt
 import uvicorn
-from fastapi import (FastAPI, Depends, HTTPException, Request,
+from fastapi import (FastAPI, Depends, HTTPException, Query, Request,
                      UploadFile, File, WebSocket, WebSocketDisconnect, status)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -542,10 +542,23 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db),
     return pesan
 
 @app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOut], tags=["Pesan"])
-def get_riwayat_percakapan(id_a: int, id_b: int, db: Session = Depends(get_db),
+def get_riwayat_percakapan(id_a: int, id_b: int,
+                            after_id: Optional[int] = Query(None),
+                            skip: int = Query(0), limit: int = Query(200),
+                            db: Session = Depends(get_db),
                             current_user: models.Akun = Depends(get_current_user)):
     if current_user.id_akun not in (id_a, id_b):
         raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    kedua_arah = or_(
+        and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
+        and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
+    )
+
+    if after_id is not None:
+        return (db.query(models.Pesan)
+                .filter(kedua_arah, models.Pesan.id_pesan > after_id)
+                .order_by(models.Pesan.waktu.asc()).all())
 
     lawan_id = id_b if current_user.id_akun == id_a else id_a
     db.query(models.Pesan).filter(
@@ -555,10 +568,9 @@ def get_riwayat_percakapan(id_a: int, id_b: int, db: Session = Depends(get_db),
     ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
     db.commit()
 
-    return (db.query(models.Pesan).filter(
-        or_(and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
-            and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a)))
-        .order_by(models.Pesan.waktu.asc()).all())
+    return (db.query(models.Pesan).filter(kedua_arah)
+            .order_by(models.Pesan.waktu.asc())
+            .offset(skip).limit(limit).all())
 
 @app.put("/pesan/baca", tags=["Pesan"])
 def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db),

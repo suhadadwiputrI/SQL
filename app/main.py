@@ -617,26 +617,27 @@ async def edit_pesan(
     return {"message": "Pesan berhasil diubah"}
 
 
-@app.delete("/pesan/{id_pesan}", tags=["Pesan"])
+@app.delete("/pesan/{id_pesan}")
 async def hapus_pesan(
     id_pesan: int,
     db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
+    current_user = Depends(get_current_user)
 ):
     pesan = db.query(models.Pesan).filter(models.Pesan.id_pesan == id_pesan).first()
     if not pesan:
         raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
     if pesan.id_pengirim != current_user.id_akun:
         raise HTTPException(status_code=403, detail="Bukan pesan kamu")
- 
+
     pesan.is_deleted = True
     db.commit()
- 
-    # Kirim WS event ke penerima agar bubble-nya langsung berubah jadi placeholder
+
+    # Kirim event WebSocket ke penerima
     await ws_manager.kirim_ke_akun(pesan.id_penerima, {
         "type":     "hapus_pesan",
         "id_pesan": id_pesan,
     })
+
     return {"message": "Pesan berhasil dihapus"}
 
 @app.get("/pesan/percakapan/{id_akun}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])

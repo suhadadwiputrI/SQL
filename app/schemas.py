@@ -259,9 +259,6 @@ class PesanOut(BaseModel):
 
     class Config:
         from_attributes = True
-        
-class PesanEditRequest(BaseModel):
-    isi_pesan: str        
 
 class TandaiBacaRequest(BaseModel):
     id_pengirim: int = Field(..., example=3)

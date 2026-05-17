@@ -127,6 +127,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
                             detail="Username atau password salah",
                             headers={"WWW-Authenticate": "Bearer"})
 
+    # ── Device lock: tolak login jika akun aktif di device lain ──────────────
     device_id = payload.device_id
     if device_id and akun.device_id and akun.device_id != device_id:
         raise HTTPException(
@@ -135,6 +136,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
                    "Logout terlebih dahulu sebelum login di sini.",
         )
 
+    # Simpan / perbarui device_id
     if device_id:
         akun.device_id = device_id
         db.commit()
@@ -148,6 +150,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 @app.post("/auth/logout", tags=["Auth"])
 def logout(db: Session = Depends(get_db),
            current_user: models.Akun = Depends(get_current_user)):
+    # Hapus device_id agar akun bisa login di device lain setelah logout
     current_user.device_id = None
     db.commit()
     return {"message": "Logout berhasil"}
@@ -159,41 +162,17 @@ def me(current_user: models.Akun = Depends(get_current_user)):
 
 # ─── Akun ─────────────────────────────────────────────────────────────────────
 
-@app.post("/akun/create-with-role", response_model=schemas.AkunOut,
-          status_code=201, tags=["Akun"])
-async def create_akun_with_role(request: Request, db: Session = Depends(get_db),
-                                _=Depends(require_admin)):
-    try:
-        body = json.loads(await request.body())
-        data = schemas.AkunCreateWithRole(**body)
-    except Exception as e:
-        raise HTTPException(status_code=422, detail=str(e))
+@app.get("/akun/", response_model=List[schemas.AkunOut], tags=["Akun"])
+def list_akun(skip=0, limit=100, db: Session = Depends(get_db),
+              _=Depends(require_admin)):
+    return crud.get_all_akun(db, skip, limit)
 
-    if crud.get_akun_by_username(db, data.username):
-        raise HTTPException(status_code=400, detail="Username sudah digunakan")
-
-    if data.role == schemas.RoleEnum.admin:
-        return crud.create_admin_with_akun(
-            db, schemas.AdminCreate(username=data.username, nama=data.nama)).akun
-    if data.role == schemas.RoleEnum.kepala_sekolah:
-        if data.nip and crud.get_kepsek_by_nip(db, data.nip):
-            raise HTTPException(status_code=400, detail="NIP sudah terdaftar")
-        return crud.create_kepsek_with_akun(
-            db, schemas.KepsekCreate(username=data.username, nama=data.nama, nip=data.nip)).akun
-    raise HTTPException(status_code=400, detail="Gunakan endpoint /guru/ untuk role guru")
-
-# PENTING: static path /akun/by-username/{username} harus di atas /akun/{id_akun}
 @app.get("/akun/by-username/{username}", response_model=schemas.AkunOut, tags=["Akun"])
 def get_akun_by_username(username: str, db: Session = Depends(get_db)):
     akun = crud.get_akun_by_username(db, username)
     if not akun:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
     return akun
-
-@app.get("/akun/", response_model=List[schemas.AkunOut], tags=["Akun"])
-def list_akun(skip=0, limit=100, db: Session = Depends(get_db),
-              _=Depends(require_admin)):
-    return crud.get_all_akun(db, skip, limit)
 
 @app.get("/akun/{id_akun}", response_model=schemas.AkunOut, tags=["Akun"])
 def get_akun(id_akun: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
@@ -240,6 +219,29 @@ def ganti_password_first_login(id_akun: int, payload: schemas.GantiPasswordFirst
     db.refresh(akun)
     return akun
 
+@app.post("/akun/create-with-role", response_model=schemas.AkunOut,
+          status_code=201, tags=["Akun"])
+async def create_akun_with_role(request: Request, db: Session = Depends(get_db),
+                                _=Depends(require_admin)):
+    try:
+        body = json.loads(await request.body())
+        data = schemas.AkunCreateWithRole(**body)
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    if crud.get_akun_by_username(db, data.username):
+        raise HTTPException(status_code=400, detail="Username sudah digunakan")
+
+    if data.role == schemas.RoleEnum.admin:
+        return crud.create_admin_with_akun(
+            db, schemas.AdminCreate(username=data.username, nama=data.nama)).akun
+    if data.role == schemas.RoleEnum.kepala_sekolah:
+        if data.nip and crud.get_kepsek_by_nip(db, data.nip):
+            raise HTTPException(status_code=400, detail="NIP sudah terdaftar")
+        return crud.create_kepsek_with_akun(
+            db, schemas.KepsekCreate(username=data.username, nama=data.nama, nip=data.nip)).akun
+    raise HTTPException(status_code=400, detail="Gunakan endpoint /guru/ untuk role guru")
+
 
 # ─── Reset Password ───────────────────────────────────────────────────────────
 
@@ -251,13 +253,6 @@ def create_reset_password(rp: schemas.ResetPasswordCreate, db: Session = Depends
     if crud.get_reset_password_by_akun(db, rp.id_akun):
         raise HTTPException(status_code=400, detail="Pertanyaan keamanan sudah ada")
     return crud.create_reset_password(db, rp)
-
-# PENTING: static paths dulu sebelum /{id_pertanyaan}
-@app.get("/reset-password/", response_model=List[schemas.ResetPasswordOut],
-         tags=["Reset Password"])
-def list_reset_password(skip=0, limit=100, db: Session = Depends(get_db),
-                        _=Depends(require_admin)):
-    return crud.get_all_reset_password(db, skip, limit)
 
 @app.get("/reset-password/akun/{id_akun}", response_model=schemas.ResetPasswordOut,
          tags=["Reset Password"])
@@ -289,6 +284,12 @@ def ganti_password(payload: schemas.GantiPasswordRequest, db: Session = Depends(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return akun
+
+@app.get("/reset-password/", response_model=List[schemas.ResetPasswordOut],
+         tags=["Reset Password"])
+def list_reset_password(skip=0, limit=100, db: Session = Depends(get_db),
+                        _=Depends(require_admin)):
+    return crud.get_all_reset_password(db, skip, limit)
 
 @app.put("/reset-password/{id_pertanyaan}", response_model=schemas.ResetPasswordOut,
          tags=["Reset Password"])
@@ -484,6 +485,15 @@ def delete_siswa(id_siswa: int, db: Session = Depends(get_db), _=Depends(require
 
 # ─── Wali Siswa ───────────────────────────────────────────────────────────────
 
+@app.put("/wali-siswa/{id_wali_siswa}", response_model=schemas.WaliSiswaOut,
+         tags=["Wali Siswa"])
+def update_wali_siswa(id_wali_siswa: int, data: schemas.WaliSiswaUpdate,
+                      db: Session = Depends(get_db), _=Depends(require_admin)):
+    obj = crud.update_wali_siswa(db, id_wali_siswa, data)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Wali siswa tidak ditemukan")
+    return obj
+
 @app.get("/wali-siswa/by-akun/{id_akun}", response_model=schemas.WaliSiswaOut,
          tags=["Wali Siswa"])
 def get_wali_by_akun(id_akun: int, db: Session = Depends(get_db),
@@ -495,19 +505,8 @@ def get_wali_by_akun(id_akun: int, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Data wali tidak ditemukan")
     return obj
 
-@app.put("/wali-siswa/{id_wali_siswa}", response_model=schemas.WaliSiswaOut,
-         tags=["Wali Siswa"])
-def update_wali_siswa(id_wali_siswa: int, data: schemas.WaliSiswaUpdate,
-                      db: Session = Depends(get_db), _=Depends(require_admin)):
-    obj = crud.update_wali_siswa(db, id_wali_siswa, data)
-    if not obj:
-        raise HTTPException(status_code=404, detail="Wali siswa tidak ditemukan")
-    return obj
-
 
 # ─── Pesan ────────────────────────────────────────────────────────────────────
-# ATURAN: semua static path (/baca, /semua-guru, /semua-wali, /percakapan/...,
-# /riwayat/...) HARUS terdaftar SEBELUM dynamic path (/{id_pesan}).
 
 @app.post("/pesan/", response_model=schemas.PesanOut, status_code=201, tags=["Pesan"])
 def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db),
@@ -525,6 +524,7 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db),
     db.commit()
     db.refresh(pesan)
 
+    # BUG FIX: kode asli merujuk `db_pesan` yang tidak didefinisikan → diganti `pesan`
     crud.kirim_notif_pesan(
         db,
         id_akun_penerima=pesan.id_penerima,
@@ -536,77 +536,11 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db),
             "id_penerima":   pesan.id_penerima,
             "isi_pesan":     pesan.isi_pesan,
             "waktu":         str(pesan.waktu),
-            "waktu_millis":  int(pesan.waktu.timestamp() * 1000),
+            "waktu_millis":  int(pesan.waktu.timestamp() * 1000),  # ← tambahan ini
             "nama_pengirim": current_user.nama,
         },
     )
     return pesan
-
-# --- Static GET routes (harus di atas /{id_pesan}) ---------------------------
-
-@app.put("/pesan/baca", tags=["Pesan"])
-def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db),
-                  current_user: models.Akun = Depends(get_current_user)):
-    db.query(models.Pesan).filter(
-        models.Pesan.id_pengirim == data.id_pengirim,
-        models.Pesan.id_penerima == current_user.id_akun,
-        models.Pesan.status.in_([
-            models.StatusPesanEnum.terkirim,
-            models.StatusPesanEnum.diterima,
-        ]),
-    ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
-    db.commit()
-    return {"message": "Pesan ditandai dibaca"}
-
-@app.get("/pesan/semua-guru", response_model=List[schemas.GuruListItem], tags=["Pesan"])
-def get_semua_guru(db: Session = Depends(get_db),
-                   current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role != models.RoleEnum.wali_siswa:
-        raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
-
-    guru_list = db.query(models.Guru).join(models.Akun).all()
-    hasil = []
-    for guru in guru_list:
-        gid = guru.id_akun
-        pesan_terakhir = (db.query(models.Pesan).filter(
-            or_(and_(models.Pesan.id_pengirim == current_user.id_akun,
-                     models.Pesan.id_penerima == gid),
-                and_(models.Pesan.id_pengirim == gid,
-                     models.Pesan.id_penerima == current_user.id_akun)))
-            .order_by(models.Pesan.waktu.desc()).first())
-        # FIX: hitung belum_dibaca dari status terkirim DAN diterima (bukan hanya diterima)
-        belum = (db.query(models.Pesan).filter(
-            models.Pesan.id_pengirim == gid,
-            models.Pesan.id_penerima == current_user.id_akun,
-            models.Pesan.status.in_([
-                models.StatusPesanEnum.terkirim,
-                models.StatusPesanEnum.diterima,
-            ]),
-        ).count())
-        hasil.append(schemas.GuruListItem(
-            id_akun_guru=gid, nama_guru=guru.akun.nama,
-            inisial=_buat_inisial(guru.akun.nama),
-            pesan_terakhir=pesan_terakhir.isi_pesan if pesan_terakhir else None,
-            waktu=pesan_terakhir.waktu if pesan_terakhir else None,
-            status=pesan_terakhir.status if pesan_terakhir else None,
-            jumlah_belum_dibaca=belum,
-        ))
-    hasil.sort(key=lambda x: x.waktu or datetime.min, reverse=True)
-    return hasil
-
-@app.get("/pesan/semua-wali", response_model=List[schemas.WaliListItem], tags=["Pesan"])
-def get_semua_wali(db: Session = Depends(get_db),
-                   current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role != models.RoleEnum.guru:
-        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    return [
-        schemas.WaliListItem(
-            id_akun_wali=w.id_akun, nama_wali=w.akun.nama,
-            inisial=_buat_inisial(w.akun.nama),
-            nama_siswa=w.siswa.nama_siswa if w.siswa else "",
-        )
-        for w in db.query(models.WaliSiswa).join(models.Akun).all()
-    ]
 
 @app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOut], tags=["Pesan"])
 def get_riwayat_percakapan(id_a: int, id_b: int,
@@ -623,37 +557,33 @@ def get_riwayat_percakapan(id_a: int, id_b: int,
     )
 
     if after_id is not None:
-        pesan_list = (db.query(models.Pesan)
+        return (db.query(models.Pesan)
                 .filter(kedua_arah, models.Pesan.id_pesan > after_id)
                 .order_by(models.Pesan.waktu.asc()).all())
-    else:
-        lawan_id = id_b if current_user.id_akun == id_a else id_a
-        db.query(models.Pesan).filter(
-            models.Pesan.id_pengirim == lawan_id,
-            models.Pesan.id_penerima == current_user.id_akun,
-            models.Pesan.status == models.StatusPesanEnum.terkirim,
-        ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
-        db.commit()
 
-        pesan_list = (db.query(models.Pesan).filter(kedua_arah)
-                .order_by(models.Pesan.waktu.asc())
-                .offset(skip).limit(limit).all())
+    lawan_id = id_b if current_user.id_akun == id_a else id_a
+    db.query(models.Pesan).filter(
+        models.Pesan.id_pengirim == lawan_id,
+        models.Pesan.id_penerima == current_user.id_akun,
+        models.Pesan.status == models.StatusPesanEnum.terkirim,
+    ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
+    db.commit()
 
-    # Sensor isi pesan yang sudah dihapus
-    hasil = []
-    for p in pesan_list:
-        out = schemas.PesanOut(
-            id_pesan    = p.id_pesan,
-            id_pengirim = p.id_pengirim,
-            id_penerima = p.id_penerima,
-            isi_pesan   = "(Pesan telah dihapus)" if p.is_deleted else p.isi_pesan,
-            waktu       = p.waktu,
-            status      = p.status,
-            is_edited   = p.is_edited,
-            is_deleted  = p.is_deleted,
-        )
-        hasil.append(out)
-    return hasil
+    return (db.query(models.Pesan).filter(kedua_arah)
+            .order_by(models.Pesan.waktu.asc())
+            .offset(skip).limit(limit).all())
+
+@app.put("/pesan/baca", tags=["Pesan"])
+def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db),
+                  current_user: models.Akun = Depends(get_current_user)):
+    db.query(models.Pesan).filter(
+        models.Pesan.id_pengirim == data.id_pengirim,
+        models.Pesan.id_penerima == current_user.id_akun,
+        models.StatusPesanEnum.terkirim,
+        models.Pesan.status == models.StatusPesanEnum.diterima,
+    ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
+    db.commit()
+    return {"message": "Pesan ditandai dibaca"}
 
 @app.get("/pesan/percakapan/{id_akun}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])
 def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db),
@@ -698,67 +628,51 @@ def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db),
         ))
     return hasil
 
-# --- Dynamic routes (/{id_pesan}) --------------------------------------------
+@app.get("/pesan/semua-guru", response_model=List[schemas.GuruListItem], tags=["Pesan"])
+def get_semua_guru(db: Session = Depends(get_db),
+                   current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role != models.RoleEnum.wali_siswa:
+        raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
 
-@app.patch("/pesan/{id_pesan}", tags=["Pesan"])
-async def edit_pesan(
-    id_pesan: int,
-    body: schemas.PesanEditRequest,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    pesan = db.query(models.Pesan).filter(models.Pesan.id_pesan == id_pesan).first()
-    if not pesan:
-        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
-    if pesan.id_pengirim != current_user.id_akun:
-        raise HTTPException(status_code=403, detail="Bukan pesan kamu")
-    if pesan.is_deleted:
-        raise HTTPException(status_code=400, detail="Pesan sudah dihapus")
+    guru_list = db.query(models.Guru).join(models.Akun).all()
+    hasil = []
+    for guru in guru_list:
+        gid = guru.id_akun
+        pesan_terakhir = (db.query(models.Pesan).filter(
+            or_(and_(models.Pesan.id_pengirim == current_user.id_akun,
+                     models.Pesan.id_penerima == gid),
+                and_(models.Pesan.id_pengirim == gid,
+                     models.Pesan.id_penerima == current_user.id_akun)))
+            .order_by(models.Pesan.waktu.desc()).first())
+        belum = (db.query(models.Pesan).filter(
+            models.Pesan.id_pengirim == gid,
+            models.Pesan.id_penerima == current_user.id_akun,
+            models.Pesan.status == models.StatusPesanEnum.diterima,
+        ).count())
+        hasil.append(schemas.GuruListItem(
+            id_akun_guru=gid, nama_guru=guru.akun.nama,
+            inisial=_buat_inisial(guru.akun.nama),
+            pesan_terakhir=pesan_terakhir.isi_pesan if pesan_terakhir else None,
+            waktu=pesan_terakhir.waktu if pesan_terakhir else None,
+            status=pesan_terakhir.status if pesan_terakhir else None,
+            jumlah_belum_dibaca=belum,
+        ))
+    hasil.sort(key=lambda x: x.waktu or datetime.min, reverse=True)
+    return hasil
 
-    pesan.isi_pesan = body.isi_pesan.strip()
-    pesan.is_edited = True
-    pesan.edited_at = datetime.utcnow()
-    db.commit()
-    db.refresh(pesan)  # FIX: refresh agar object tidak expired setelah commit
-
-    # FIX: bungkus ws call agar error WS tidak menyebabkan HTTP 500
-    try:
-        await ws_manager.kirim_ke_akun(pesan.id_penerima, {
-            "type":      "edit_pesan",
-            "id_pesan":  id_pesan,
-            "isi_pesan": pesan.isi_pesan,
-        })
-    except Exception:
-        pass
-
-    return {"message": "Pesan berhasil diubah"}
-
-@app.delete("/pesan/{id_pesan}", tags=["Pesan"])
-async def hapus_pesan(
-    id_pesan: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    pesan = db.query(models.Pesan).filter(models.Pesan.id_pesan == id_pesan).first()
-    if not pesan:
-        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
-    if pesan.id_pengirim != current_user.id_akun:
-        raise HTTPException(status_code=403, detail="Bukan pesan kamu")
-
-    pesan.is_deleted = True
-    db.commit()
-    db.refresh(pesan)  # FIX: refresh agar object tidak expired setelah commit
-
-    # FIX: bungkus ws call agar error WS tidak menyebabkan HTTP 500
-    try:
-        await ws_manager.kirim_ke_akun(pesan.id_penerima, {
-            "type":     "hapus_pesan",
-            "id_pesan": id_pesan,
-        })
-    except Exception:
-        pass
-
-    return {"message": "Pesan berhasil dihapus"}
+@app.get("/pesan/semua-wali", response_model=List[schemas.WaliListItem], tags=["Pesan"])
+def get_semua_wali(db: Session = Depends(get_db),
+                   current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+    return [
+        schemas.WaliListItem(
+            id_akun_wali=w.id_akun, nama_wali=w.akun.nama,
+            inisial=_buat_inisial(w.akun.nama),
+            nama_siswa=w.siswa.nama_siswa if w.siswa else "",
+        )
+        for w in db.query(models.WaliSiswa).join(models.Akun).all()
+    ]
 
 
 # ─── Absensi ──────────────────────────────────────────────────────────────────
@@ -825,7 +739,23 @@ def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest,
             current_user.nama, hasil[0].id_absensi)
     return hasil
 
-# PENTING: /absensi/siswa/{id_siswa}/ringkasan harus di atas /absensi/siswa/{id_siswa}
+@app.get("/absensi/siswa/{id_siswa}", response_model=List[schemas.AbsensiHarianSiswaOut],
+         tags=["Absensi"])
+def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int,
+                       db: Session = Depends(get_db),
+                       current_user: models.Akun = Depends(get_current_user)):
+    _cek_wali_akses_siswa(db, current_user, id_siswa)
+    records = (db.query(models.Absensi).filter(
+        models.Absensi.id_siswa == id_siswa,
+        extract("month", models.Absensi.tanggal) == bulan,
+        extract("year",  models.Absensi.tanggal) == tahun,
+    ).order_by(models.Absensi.tanggal).all())
+    return [schemas.AbsensiHarianSiswaOut(
+        id_absensi=ab.id_absensi, id_siswa=ab.id_siswa, id_guru=ab.id_guru,
+        tanggal=ab.tanggal, status=ab.status, keterangan=ab.keterangan,
+        nama_guru=ab.guru.akun.nama if ab.guru and ab.guru.akun else None,
+    ) for ab in records]
+
 @app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiOut,
          tags=["Absensi"])
 def get_ringkasan_absensi_siswa(id_siswa: int, bulan: int, tahun: int,
@@ -844,23 +774,6 @@ def get_ringkasan_absensi_siswa(id_siswa: int, bulan: int, tahun: int,
         elif ab.status == models.StatusAbsensiEnum.izin:  rekap.izin  += 1
         elif ab.status == models.StatusAbsensiEnum.alpha: rekap.alpha += 1
     return rekap
-
-@app.get("/absensi/siswa/{id_siswa}", response_model=List[schemas.AbsensiHarianSiswaOut],
-         tags=["Absensi"])
-def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int,
-                       db: Session = Depends(get_db),
-                       current_user: models.Akun = Depends(get_current_user)):
-    _cek_wali_akses_siswa(db, current_user, id_siswa)
-    records = (db.query(models.Absensi).filter(
-        models.Absensi.id_siswa == id_siswa,
-        extract("month", models.Absensi.tanggal) == bulan,
-        extract("year",  models.Absensi.tanggal) == tahun,
-    ).order_by(models.Absensi.tanggal).all())
-    return [schemas.AbsensiHarianSiswaOut(
-        id_absensi=ab.id_absensi, id_siswa=ab.id_siswa, id_guru=ab.id_guru,
-        tanggal=ab.tanggal, status=ab.status, keterangan=ab.keterangan,
-        nama_guru=ab.guru.akun.nama if ab.guru and ab.guru.akun else None,
-    ) for ab in records]
 
 
 # ─── Catatan Harian ───────────────────────────────────────────────────────────
@@ -882,18 +795,6 @@ def buat_catatan(payload: schemas.CatatanHarianCreate, db: Session = Depends(get
     crud.kirim_notif_catatan(db, catatan, current_user.nama)
     return crud._build_catatan_out(catatan)
 
-# PENTING: static paths dulu sebelum /{id_catatan}
-@app.get("/catatan/guru/", response_model=schemas.CatatanListResponse, tags=["Catatan Harian"])
-def get_catatan_by_guru_login(skip=0, limit=50, db: Session = Depends(get_db),
-                               current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role != models.RoleEnum.guru:
-        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    guru = _get_guru_or_403(db, current_user.id_akun)
-    catatan_list = crud.get_catatan_by_guru(db, guru.id_guru, skip, limit)
-    return schemas.CatatanListResponse(
-        total=len(catatan_list),
-        data=[crud._build_catatan_out(c) for c in catatan_list])
-
 @app.get("/catatan/siswa/{id_siswa}", response_model=schemas.CatatanListResponse,
          tags=["Catatan Harian"])
 def get_catatan_siswa(id_siswa: int, skip=0, limit=20,
@@ -907,6 +808,17 @@ def get_catatan_siswa(id_siswa: int, skip=0, limit=20,
         if not wali or wali.id_siswa != id_siswa:
             raise HTTPException(status_code=403, detail="Anda hanya dapat melihat catatan anak Anda")
     catatan_list = crud.get_catatan_by_siswa(db, id_siswa, siswa.id_kelas, skip, limit)
+    return schemas.CatatanListResponse(
+        total=len(catatan_list),
+        data=[crud._build_catatan_out(c) for c in catatan_list])
+
+@app.get("/catatan/guru/", response_model=schemas.CatatanListResponse, tags=["Catatan Harian"])
+def get_catatan_by_guru_login(skip=0, limit=50, db: Session = Depends(get_db),
+                               current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+    guru = _get_guru_or_403(db, current_user.id_akun)
+    catatan_list = crud.get_catatan_by_guru(db, guru.id_guru, skip, limit)
     return schemas.CatatanListResponse(
         total=len(catatan_list),
         data=[crud._build_catatan_out(c) for c in catatan_list])

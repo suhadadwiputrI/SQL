@@ -152,15 +152,6 @@ class WaliSiswa(Base):
 # ─── Pesan ────────────────────────────────────────────────────────────────────
 
 class Pesan(Base):
-    """
-    Tabel pesan dua arah antara Guru dan Wali Siswa.
-
-    id_pengirim dan id_penerima merujuk ke akun.id_akun — bukan id_guru / id_wali_siswa.
-    Ini memudahkan query karena semua user (guru maupun wali) punya id_akun unik.
-
-    Alur status:
-        terkirim → diterima (saat penerima membuka percakapan) → dibaca (saat penerima membaca)
-    """
     __tablename__ = "pesan"
 
     id_pesan    = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
@@ -172,6 +163,9 @@ class Pesan(Base):
     waktu       = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     status      = Column(Enum(StatusPesanEnum),
                          default=StatusPesanEnum.terkirim, nullable=False)
+    is_edited   = Column(Boolean, default=False, nullable=False)
+    edited_at   = Column(TIMESTAMP, nullable=True)
+    is_deleted  = Column(Boolean, default=False, nullable=False)
 
     pengirim = relationship("Akun", foreign_keys=[id_pengirim], back_populates="pesan_terkirim")
     penerima = relationship("Akun", foreign_keys=[id_penerima], back_populates="pesan_diterima")

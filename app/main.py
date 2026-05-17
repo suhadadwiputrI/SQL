@@ -54,7 +54,6 @@ app.add_middleware(
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_origins=["*"],
     allow_headers=["*"],
 )
 
@@ -326,7 +325,7 @@ def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db
     res = []
     for s in siswa_list:
         absensi = db.query(models.Absensi).filter(models.Absensi.id_siswa == s.id_siswa, models.Absensi.tanggal == tanggal).first()
-        status_val = absency.status.value if absensi else None
+        status_val = absensi.status.value if absensi else None
         keterangan_val = absensi.keterangan if absensi else None
         res.append(schemas.SiswaAbsensiItem(
             id_siswa=s.id_siswa,
@@ -539,7 +538,7 @@ def get_dashboard_siswa_ortu(db: Session = Depends(get_db), current_user: models
     return schemas.OrtuSiswaDashboardResponse(
         id_siswa=siswa.id_siswa,
         nama_siswa=siswa.nama_siswa,
-        nisn=s.nisn,
+        nisn=siswa.nisn,
         kelas_nama=kelas_nama,
         status_absensi_hari_ini=status_absensi_hari_ini,
         rekap_bulan_ini=rekap_bulan_ini,
@@ -935,7 +934,7 @@ async def websocket_endpoint(websocket: WebSocket, id_akun: int, token: str):
     try:
         while True:
             await asyncio.sleep(30)
-            await websocket.send_text('{\"tipe\":\"ping\"}')
+            await websocket.send_text('{"tipe":"ping"}')
     except WebSocketDisconnect:
         ws_manager.disconnect(id_akun)
     except Exception as e:

@@ -517,3 +517,77 @@ class BacaNotifRequest(BaseModel):
         None,
         description="ID notif yang ingin ditandai. Kosongkan untuk tandai semua.",
     )
+    
+# ─── Laporan Otomatis: Ringkasan Absensi per Siswa (dalam kelas) ──────────────
+ 
+class RingkasanAbsensiSiswaOut(BaseModel):
+    """
+    Rekap absensi satu siswa dalam satu bulan.
+    Dipakai dalam LaporanKelasOut (list per kelas).
+    """
+    id_siswa:   int
+    nama_siswa: str
+    hadir:      int = 0
+    sakit:      int = 0
+    izin:       int = 0
+    alpha:      int = 0
+    total_hari: int = 0   # hadir+sakit+izin+alpha
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+# ─── Laporan Otomatis: Per Siswa (gabungan absensi + catatan) ─────────────────
+ 
+class LaporanSiswaOut(BaseModel):
+    """
+    Response GET /laporan/otomatis/siswa/{id_siswa}?bulan=&tahun=
+    Menggabungkan ringkasan absensi + list catatan untuk satu siswa.
+    """
+    # Info siswa
+    id_siswa:      int
+    nama_siswa:    str
+    nama_kelas:    Optional[str] = None
+ 
+    # Periode
+    bulan:  int
+    tahun:  int
+ 
+    # Rekap absensi
+    hadir:  int = 0
+    sakit:  int = 0
+    izin:   int = 0
+    alpha:  int = 0
+    total_hari: int = 0
+ 
+    # Catatan harian (terbaru dulu)
+    catatan:       List["CatatanHarianOut"] = []
+    total_catatan: int = 0
+ 
+ 
+# ─── Laporan Otomatis: Per Kelas ──────────────────────────────────────────────
+ 
+class LaporanKelasOut(BaseModel):
+    """
+    Response GET /laporan/otomatis/kelas/{id_kelas}?bulan=&tahun=
+    Ringkasan absensi semua siswa di satu kelas.
+    """
+    id_kelas:   int
+    nama_kelas: str
+    bulan:      int
+    tahun:      int
+ 
+    # Agregat seluruh kelas
+    total_siswa:    int = 0
+    total_hadir:    int = 0
+    total_sakit:    int = 0
+    total_izin:     int = 0
+    total_alpha:    int = 0
+ 
+    # Detail per siswa (untuk tabel rekap)
+    siswa: List[RingkasanAbsensiSiswaOut] = []
+ 
+ 
+# Hindari circular import — forward ref sudah tersedia dari schemas.py
+# Pastikan CatatanHarianOut sudah diimport sebelum blok ini
+LaporanSiswaOut.model_rebuild()    

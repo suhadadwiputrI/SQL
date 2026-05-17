@@ -10,7 +10,8 @@ from typing import List, Optional
 import jwt
 import uvicorn
 from fastapi import (FastAPI, Depends, HTTPException, Query, Request,
-                     UploadFile, File, WebSocket, WebSocketDisconnect, status)
+                     UploadFile, File, WebSocket, WebSocketDisconnect, status,
+                     APIRouter)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
@@ -127,7 +128,6 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
                             detail="Username atau password salah",
                             headers={"WWW-Authenticate": "Bearer"})
 
-    # ── Device lock: tolak login jika akun aktif di device lain ──────────────
     device_id = payload.device_id
     if device_id and akun.device_id and akun.device_id != device_id:
         raise HTTPException(
@@ -136,7 +136,6 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
                    "Logout terlebih dahulu sebelum login di sini.",
         )
 
-    # Simpan / perbarui device_id
     if device_id:
         akun.device_id = device_id
         db.commit()
@@ -150,7 +149,6 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 @app.post("/auth/logout", tags=["Auth"])
 def logout(db: Session = Depends(get_db),
            current_user: models.Akun = Depends(get_current_user)):
-    # Hapus device_id agar akun bisa login di device lain setelah logout
     current_user.device_id = None
     db.commit()
     return {"message": "Logout berhasil"}
@@ -524,7 +522,6 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db),
     db.commit()
     db.refresh(pesan)
 
-    # BUG FIX: kode asli merujuk `db_pesan` yang tidak didefinisikan → diganti `pesan`
     crud.kirim_notif_pesan(
         db,
         id_akun_penerima=pesan.id_penerima,
@@ -536,7 +533,7 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db),
             "id_penerima":   pesan.id_penerima,
             "isi_pesan":     pesan.isi_pesan,
             "waktu":         str(pesan.waktu),
-            "waktu_millis":  int(pesan.waktu.timestamp() * 1000),  # ← tambahan ini
+            "waktu_millis":  int(pesan.waktu.timestamp() * 1000),
             "nama_pengirim": current_user.nama,
         },
     )
@@ -579,7 +576,6 @@ def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db)
     db.query(models.Pesan).filter(
         models.Pesan.id_pengirim == data.id_pengirim,
         models.Pesan.id_penerima == current_user.id_akun,
-        models.StatusPesanEnum.terkirim,
         models.Pesan.status == models.StatusPesanEnum.diterima,
     ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
     db.commit()
@@ -758,9 +754,9 @@ def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int,
 
 @app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiOut,
          tags=["Absensi"])
-def get_ringkasan_absensi_siswa(id_siswa: int, bulan: int, tahun: int,
-                                 db: Session = Depends(get_db),
-                                 current_user: models.Akun = Depends(get_current_user)):
+def get_ringkasan_absensi(id_siswa: int, bulan: int, tahun: int,
+                           db: Session = Depends(get_db),
+                           current_user: models.Akun = Depends(get_current_user)):
     _cek_wali_akses_siswa(db, current_user, id_siswa)
     records = (db.query(models.Absensi).filter(
         models.Absensi.id_siswa == id_siswa,
@@ -918,14 +914,90 @@ def tandai_notif_dibaca(payload: schemas.BacaNotifRequest,
     return {"message": f"{jumlah} notifikasi ditandai sudah dibaca", "jumlah": jumlah}
 
 
+# ─── Laporan Otomatis ─────────────────────────────────────────────────────────
+
+router_laporan = APIRouter(prefix="/laporan", tags=["Laporan Otomatis"])
+
+
+def _validasi_periode(bulan: int, tahun: int):
+    if not (1 <= bulan <= 12):
+        raise HTTPException(status_code=422, detail="Bulan harus antara 1–12")
+    if not (2000 <= tahun <= date.today().year):
+        raise HTTPException(status_code=422, detail="Tahun tidak valid")
+
+
+@router_laporan.get(
+    "/otomatis/siswa/{id_siswa}",
+    response_model=schemas.LaporanSiswaOut,
+    summary="Laporan otomatis per siswa (absensi + catatan)",
+)
+def laporan_otomatis_siswa(
+    id_siswa: int,
+    bulan: int = Query(default=None, ge=1, le=12),
+    tahun: int = Query(default=None, ge=2000),
+    limit_catatan: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    today = date.today()
+    bulan = bulan or today.month
+    tahun = tahun or today.year
+    _validasi_periode(bulan, tahun)
+
+    if current_user.role == models.RoleEnum.wali_siswa:
+        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        if not wali or wali.id_siswa != id_siswa:
+            raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    laporan = crud.get_laporan_otomatis_siswa(db, id_siswa, bulan, tahun, limit_catatan)
+    if laporan is None:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+    return laporan
+
+
+@router_laporan.get(
+    "/otomatis/kelas/{id_kelas}",
+    response_model=schemas.LaporanKelasOut,
+    summary="Laporan otomatis per kelas (rekap absensi semua siswa)",
+)
+def laporan_otomatis_kelas(
+    id_kelas: int,
+    bulan: int = Query(default=None, ge=1, le=12),
+    tahun: int = Query(default=None, ge=2000),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    today = date.today()
+    bulan = bulan or today.month
+    tahun = tahun or today.year
+    _validasi_periode(bulan, tahun)
+
+    if current_user.role not in (
+        models.RoleEnum.guru, models.RoleEnum.kepala_sekolah, models.RoleEnum.admin
+    ):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+
+    if current_user.role == models.RoleEnum.guru:
+        guru = crud.get_guru_by_akun(db, current_user.id_akun)
+        if not guru:
+            raise HTTPException(status_code=403, detail="Data guru tidak ditemukan")
+        if id_kelas not in crud.decode_id_kelas(guru.id_kelas):
+            raise HTTPException(status_code=403, detail="Kelas bukan milik guru ini")
+
+    laporan = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
+    if laporan is None:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    return laporan
+
+
+# ─── Daftarkan router laporan ─────────────────────────────────────────────────
+app.include_router(router_laporan)
+
+
 # ─── WebSocket ────────────────────────────────────────────────────────────────
 
 @app.websocket("/ws/{id_akun}")
 async def websocket_endpoint(websocket: WebSocket, id_akun: int, token: str):
-    """
-    ws://HOST/ws/{id_akun}?token=<raw_token>
-    Push: {"tipe":"pesan_baru","data":{...}} | {"tipe":"ping"}
-    """
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("id_akun") != id_akun:

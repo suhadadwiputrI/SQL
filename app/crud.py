@@ -4,7 +4,7 @@ from typing import Optional, List
 
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
-
+from sqlalchemy import extract, func
 from app import models, schemas
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -523,3 +523,158 @@ def tandai_notif_dibaca(db: Session, id_akun: int,
         n.status = models.StatusNotifEnum.sudah_dibaca
     db.commit()
     return len(rows)
+
+# ─── Laporan Otomatis ─────────────────────────────────────────────────────────
+ 
+def get_ringkasan_absensi_siswa(
+    db: Session,
+    id_siswa: int,
+    bulan: int,
+    tahun: int,
+) -> dict:
+    """
+    Hitung jumlah hadir/sakit/izin/alpha satu siswa dalam satu bulan.
+    Return dict siap pakai (bukan ORM object).
+    """
+    rows = (
+        db.query(models.Absensi.status, func.count(models.Absensi.id_absensi))
+        .filter(
+            models.Absensi.id_siswa == id_siswa,
+            extract("month", models.Absensi.tanggal) == bulan,
+            extract("year",  models.Absensi.tanggal) == tahun,
+        )
+        .group_by(models.Absensi.status)
+        .all()
+    )
+    result = {"hadir": 0, "sakit": 0, "izin": 0, "alpha": 0}
+    for status, jumlah in rows:
+        result[status.value] = jumlah
+    result["total_hari"] = sum(result.values())
+    return result
+ 
+ 
+def get_laporan_otomatis_siswa(
+    db: Session,
+    id_siswa: int,
+    bulan: int,
+    tahun: int,
+    limit_catatan: int = 20,
+) -> Optional[schemas.LaporanSiswaOut]:
+    """
+    Gabungkan ringkasan absensi + catatan harian untuk satu siswa.
+    Return LaporanSiswaOut atau None jika siswa tidak ditemukan.
+    """
+    siswa = db.get(models.Siswa, id_siswa)
+    if not siswa:
+        return None
+ 
+    # Ambil kelas
+    nama_kelas = siswa.kelas.nama_kelas if siswa.kelas else None
+ 
+    # Ringkasan absensi
+    rekap = get_ringkasan_absensi_siswa(db, id_siswa, bulan, tahun)
+ 
+    # Catatan harian yang relevan (satu_siswa ATAU satu_kelas ATAU semua_kelas)
+    from sqlalchemy import or_, and_
+    conds = [
+        models.CatatanHarian.target == models.TargetCatatanEnum.semua_kelas,
+        and_(
+            models.CatatanHarian.target == models.TargetCatatanEnum.satu_siswa,
+            models.CatatanHarian.id_siswa == id_siswa,
+        ),
+    ]
+    if siswa.id_kelas:
+        conds.append(
+            and_(
+                models.CatatanHarian.target == models.TargetCatatanEnum.satu_kelas,
+                models.CatatanHarian.id_kelas == siswa.id_kelas,
+            )
+        )
+ 
+    catatan_list = (
+        db.query(models.CatatanHarian)
+        .filter(
+            or_(*conds),
+            extract("month", models.CatatanHarian.tanggal) == bulan,
+            extract("year",  models.CatatanHarian.tanggal) == tahun,
+        )
+        .order_by(models.CatatanHarian.tanggal.desc())
+        .limit(limit_catatan)
+        .all()
+    )
+ 
+    total_catatan = (
+        db.query(func.count(models.CatatanHarian.id_catatan))
+        .filter(
+            or_(*conds),
+            extract("month", models.CatatanHarian.tanggal) == bulan,
+            extract("year",  models.CatatanHarian.tanggal) == tahun,
+        )
+        .scalar()
+    )
+ 
+    catatan_out = [_build_catatan_out(c) for c in catatan_list]
+ 
+    return schemas.LaporanSiswaOut(
+        id_siswa=siswa.id_siswa,
+        nama_siswa=siswa.nama_siswa,
+        nama_kelas=nama_kelas,
+        bulan=bulan,
+        tahun=tahun,
+        **rekap,
+        catatan=catatan_out,
+        total_catatan=total_catatan or 0,
+    )
+ 
+ 
+def get_laporan_otomatis_kelas(
+    db: Session,
+    id_kelas: int,
+    bulan: int,
+    tahun: int,
+) -> Optional[schemas.LaporanKelasOut]:
+    """
+    Ringkasan absensi semua siswa di satu kelas untuk satu bulan.
+    Return LaporanKelasOut atau None jika kelas tidak ditemukan.
+    """
+    kelas = db.get(models.Kelas, id_kelas)
+    if not kelas:
+        return None
+ 
+    siswa_list = (
+        db.query(models.Siswa)
+        .filter(models.Siswa.id_kelas == id_kelas)
+        .order_by(models.Siswa.nama_siswa)
+        .all()
+    )
+ 
+    detail_siswa = []
+    total_hadir = total_sakit = total_izin = total_alpha = 0
+ 
+    for siswa in siswa_list:
+        rekap = get_ringkasan_absensi_siswa(db, siswa.id_siswa, bulan, tahun)
+        total_hadir += rekap["hadir"]
+        total_sakit += rekap["sakit"]
+        total_izin  += rekap["izin"]
+        total_alpha += rekap["alpha"]
+ 
+        detail_siswa.append(
+            schemas.RingkasanAbsensiSiswaOut(
+                id_siswa=siswa.id_siswa,
+                nama_siswa=siswa.nama_siswa,
+                **rekap,
+            )
+        )
+ 
+    return schemas.LaporanKelasOut(
+        id_kelas=id_kelas,
+        nama_kelas=kelas.nama_kelas,
+        bulan=bulan,
+        tahun=tahun,
+        total_siswa=len(siswa_list),
+        total_hadir=total_hadir,
+        total_sakit=total_sakit,
+        total_izin=total_izin,
+        total_alpha=total_alpha,
+        siswa=detail_siswa,
+    )

@@ -1063,25 +1063,41 @@ def get_laporan_catatan(
     return result
 
 
-@router_laporan.get("/pdf/absensi", summary="[GURU] Generate PDF laporan absensi satu kelas")
+@router_laporan.get("/pdf/absensi", summary="Generate PDF laporan absensi satu kelas")
 def download_pdf_absensi(
-    id_kelas: int = Query(..., description="ID kelas"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    id_kelas: int = Query(...),
+    tanggal_awal: date = Query(...),
+    tanggal_akhir: date = Query(...),
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
     if tanggal_awal > tanggal_akhir:
         raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
-    guru = _get_guru_or_403(db, current_user.id_akun)
-    _cek_guru_akses_kelas(guru, id_kelas)
+
+    # ✅ FIX: admin & kepala_sekolah boleh akses tanpa cek guru
+    if current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
+        # Validasi kelas ada
+        if not db.get(models.Kelas, id_kelas):
+            raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    else:
+        # Guru: tetap cek akses kelas seperti semula
+        guru = _get_guru_or_403(db, current_user.id_akun)
+        _cek_guru_akses_kelas(guru, id_kelas)
+
     data = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not data:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+
     pdf_bytes = _generate_pdf_absensi(data)
-    nama_file = f"laporan_absensi_{data.nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
-    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
-                             headers={"Content-Disposition": f'attachment; filename="{nama_file}"'})
+    nama_file = (
+        f"laporan_absensi_{data.nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf"
+        .replace(" ", "_")
+    )
+    return StreamingResponse(
+        BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{nama_file}"'},
+    )
 
 
 @router_laporan.get("/pdf/catatan", summary="[GURU] Generate PDF laporan catatan harian satu siswa")

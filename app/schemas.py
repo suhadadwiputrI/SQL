@@ -274,10 +274,11 @@ class PercakapanItem(BaseModel):
     jumlah_belum_dibaca: int = 0
 
 class WaliListItem(BaseModel):
-    id_akun_wali: int
-    nama_wali:    str
-    inisial:      str
-    nama_siswa:   str = ""
+    id_akun_wali:   int
+    nama_wali:      str
+    inisial:        str
+    nama_siswa:     str = ""
+    id_kelas_siswa: Optional[int] = None
 
 class GuruListItem(BaseModel):
     id_akun_guru: int

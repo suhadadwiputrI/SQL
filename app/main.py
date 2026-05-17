@@ -706,14 +706,18 @@ def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = De
 def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+    guru = _get_guru_or_403(db, current_user.id_akun)
+    allowed_kelas = crud.decode_id_kelas(guru.id_kelas)  # [] jika NULL
     return [
         schemas.WaliListItem(
             id_akun_wali=w.id_akun,
             nama_wali=w.akun.nama,
             inisial=_buat_inisial(w.akun.nama),
             nama_siswa=w.siswa.nama_siswa if w.siswa else "",
+            id_kelas_siswa=w.siswa.id_kelas if w.siswa else None,
         )
         for w in db.query(models.WaliSiswa).join(models.Akun).all()
+        if w.siswa and w.siswa.id_kelas in allowed_kelas
     ]
 
 

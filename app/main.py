@@ -550,28 +550,46 @@ def get_riwayat_percakapan(id_a: int, id_b: int,
                             current_user: models.Akun = Depends(get_current_user)):
     if current_user.id_akun not in (id_a, id_b):
         raise HTTPException(status_code=403, detail="Akses ditolak")
-
+ 
     kedua_arah = or_(
         and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
         and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
     )
-
+ 
     if after_id is not None:
-        return (db.query(models.Pesan)
+        pesan_list = (db.query(models.Pesan)
                 .filter(kedua_arah, models.Pesan.id_pesan > after_id)
                 .order_by(models.Pesan.waktu.asc()).all())
-
-    lawan_id = id_b if current_user.id_akun == id_a else id_a
-    db.query(models.Pesan).filter(
-        models.Pesan.id_pengirim == lawan_id,
-        models.Pesan.id_penerima == current_user.id_akun,
-        models.Pesan.status == models.StatusPesanEnum.terkirim,
-    ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
-    db.commit()
-
-    return (db.query(models.Pesan).filter(kedua_arah)
-            .order_by(models.Pesan.waktu.asc())
-            .offset(skip).limit(limit).all())
+    else:
+        lawan_id = id_b if current_user.id_akun == id_a else id_a
+        db.query(models.Pesan).filter(
+            models.Pesan.id_pengirim == lawan_id,
+            models.Pesan.id_penerima == current_user.id_akun,
+            models.Pesan.status == models.StatusPesanEnum.terkirim,
+        ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
+        db.commit()
+ 
+        pesan_list = (db.query(models.Pesan).filter(kedua_arah)
+                .order_by(models.Pesan.waktu.asc())
+                .offset(skip).limit(limit).all())
+ 
+    # ── Sensor isi pesan yang sudah dihapus ───────────────────────────────────
+    # Pesan is_deleted tetap dikembalikan (agar posisi bubble tidak hilang),
+    # tapi isi_pesan diganti placeholder sehingga konten asli tidak bocor.
+    hasil = []
+    for p in pesan_list:
+        out = schemas.PesanOut(
+            id_pesan    = p.id_pesan,
+            id_pengirim = p.id_pengirim,
+            id_penerima = p.id_penerima,
+            isi_pesan   = "(Pesan telah dihapus)" if p.is_deleted else p.isi_pesan,
+            waktu       = p.waktu,
+            status      = p.status,
+            is_edited   = p.is_edited,
+            is_deleted  = p.is_deleted,
+        )
+        hasil.append(out)
+    return hasil
 
 @app.put("/pesan/baca", tags=["Pesan"])
 def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db),
@@ -586,6 +604,57 @@ def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db)
     ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
     db.commit()
     return {"message": "Pesan ditandai dibaca"}
+
+@app.patch("/pesan/{id_pesan}", tags=["Pesan"])
+async def edit_pesan(
+    id_pesan: int,
+    body: schemas.PesanEditRequest,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    pesan = db.query(models.Pesan).filter(models.Pesan.id_pesan == id_pesan).first()
+    if not pesan:
+        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
+    if pesan.id_pengirim != current_user.id_akun:
+        raise HTTPException(status_code=403, detail="Bukan pesan kamu")
+    if pesan.is_deleted:
+        raise HTTPException(status_code=400, detail="Pesan sudah dihapus")
+ 
+    pesan.isi_pesan = body.isi_pesan.strip()
+    pesan.is_edited = True
+    pesan.edited_at = datetime.utcnow()
+    db.commit()
+ 
+    # Kirim WS event ke penerima agar bubble-nya langsung berubah
+    await ws_manager.kirim_ke_akun(pesan.id_penerima, {
+        "type":      "edit_pesan",
+        "id_pesan":  id_pesan,
+        "isi_pesan": pesan.isi_pesan,
+    })
+    return {"message": "Pesan berhasil diubah"}
+
+
+@app.delete("/pesan/{id_pesan}", tags=["Pesan"])
+async def hapus_pesan(
+    id_pesan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    pesan = db.query(models.Pesan).filter(models.Pesan.id_pesan == id_pesan).first()
+    if not pesan:
+        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
+    if pesan.id_pengirim != current_user.id_akun:
+        raise HTTPException(status_code=403, detail="Bukan pesan kamu")
+ 
+    pesan.is_deleted = True
+    db.commit()
+ 
+    # Kirim WS event ke penerima agar bubble-nya langsung berubah jadi placeholder
+    await ws_manager.kirim_ke_akun(pesan.id_penerima, {
+        "type":     "hapus_pesan",
+        "id_pesan": id_pesan,
+    })
+    return {"message": "Pesan berhasil dihapus"}
 
 @app.get("/pesan/percakapan/{id_akun}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])
 def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db),

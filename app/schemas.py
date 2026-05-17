@@ -255,10 +255,15 @@ class PesanOut(BaseModel):
     id_penerima: int
     isi_pesan:   str
     waktu:       datetime
-    status:      StatusPesanEnum
+    status:      StatusPesanEnum 
+    is_edited:   bool = False
+    is_deleted:  bool = False
 
     class Config:
         from_attributes = True
+        
+class PesanEditRequest(BaseModel):
+    isi_pesan: str        
 
 class TandaiBacaRequest(BaseModel):
     id_pengirim: int = Field(..., example=3)

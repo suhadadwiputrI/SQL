@@ -619,19 +619,20 @@ async def edit_pesan(
         raise HTTPException(status_code=403, detail="Bukan pesan kamu")
     if pesan.is_deleted:
         raise HTTPException(status_code=400, detail="Pesan sudah dihapus")
- 
+
     pesan.isi_pesan = body.isi_pesan.strip()
     pesan.is_edited = True
     pesan.edited_at = datetime.utcnow()
     db.commit()
- 
-    # Kirim WS event ke penerima agar bubble-nya langsung berubah
+    db.refresh(pesan)  # ← TAMBAHKAN INI
+
     await ws_manager.kirim_ke_akun(pesan.id_penerima, {
         "type":      "edit_pesan",
         "id_pesan":  id_pesan,
         "isi_pesan": pesan.isi_pesan,
     })
     return {"message": "Pesan berhasil diubah"}
+
 
 
 @app.delete("/pesan/{id_pesan}", tags=["Pesan"])
@@ -645,11 +646,11 @@ async def hapus_pesan(
         raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
     if pesan.id_pengirim != current_user.id_akun:
         raise HTTPException(status_code=403, detail="Bukan pesan kamu")
- 
+
     pesan.is_deleted = True
     db.commit()
- 
-    # Kirim WS event ke penerima agar bubble-nya langsung berubah jadi placeholder
+    db.refresh(pesan)  # ← TAMBAHKAN INI
+
     await ws_manager.kirim_ke_akun(pesan.id_penerima, {
         "type":     "hapus_pesan",
         "id_pesan": id_pesan,

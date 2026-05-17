@@ -886,6 +886,8 @@ def get_laporan_absensi_kelas_range(
             schemas.RingkasanAbsensiSiswaRangeOut(
                 id_siswa   = siswa.id_siswa,
                 nama_siswa = siswa.nama_siswa,
+                # BUG FIX #2: isi nisn langsung dari model siswa
+                nisn       = siswa.nisn or "",
                 hadir      = rekap["hadir"],
                 sakit      = rekap["sakit"],
                 izin       = rekap["izin"],
@@ -946,6 +948,8 @@ def get_laporan_catatan_kelas_range(
             schemas.LaporanCatatanSiswaOut(
                 id_siswa       = siswa.id_siswa,
                 nama_siswa     = siswa.nama_siswa,
+                # BUG FIX #2: isi nisn langsung dari model siswa
+                nisn           = siswa.nisn or "",
                 jumlah_catatan = len(catatan_out),
                 catatan        = catatan_out,
             )
@@ -958,4 +962,4 @@ def get_laporan_catatan_kelas_range(
         tanggal_akhir = tanggal_akhir,
         total_siswa   = len(siswa_list),
         siswa         = data_siswa,
-    )      
+    )

@@ -661,15 +661,17 @@ class RingkasanAbsensiSiswaRangeOut(BaseModel):
     """
     Rekap absensi satu siswa dalam range tanggal.
     Dipakai dalam LaporanAbsensiKelasOut (list per kelas).
+    BUG FIX #2: nisn ditambahkan agar field ikut di-serialize ke JSON response.
     """
     id_siswa:   int
     nama_siswa: str
+    nisn:       Optional[str] = None
     hadir:      int = 0
     sakit:      int = 0
     izin:       int = 0
     alpha:      int = 0
     total_hari: int = 0
- 
+
     class Config:
         from_attributes = True
  
@@ -743,4 +745,4 @@ class LaporanCatatanKelasOut(BaseModel):
     siswa: List[LaporanCatatanSiswaOut] = []
  
     class Config:
-        from_attributes = True    
+        from_attributes = True

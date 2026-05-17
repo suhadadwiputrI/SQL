@@ -975,6 +975,12 @@ def get_laporan_absensi(
     result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    # ── Inject nisn dari DB ───────────────────────────────────────────────────
+    if result.siswa:
+        nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
+        for item in result.siswa:
+            if not getattr(item, "nisn", None):
+                item.nisn = nisn_map.get(item.id_siswa, "")
     return result
 
 
@@ -991,6 +997,12 @@ def get_laporan_catatan(
     result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    # ── Inject nisn dari DB ───────────────────────────────────────────────────
+    if result.siswa:
+        nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
+        for item in result.siswa:
+            if not getattr(item, "nisn", None):
+                item.nisn = nisn_map.get(item.id_siswa, "")
     return result
 
 

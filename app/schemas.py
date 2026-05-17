@@ -368,14 +368,18 @@ class AbsensiHarianSiswaOut(BaseModel):
         from_attributes = True
 
 
-class RingkasanAbsensiOut(BaseModel):
-    """Rekap jumlah per status untuk satu bulan."""
-    bulan:  int
-    tahun:  int
-    hadir:  int = 0
-    sakit:  int = 0
-    izin:   int = 0
-    alpha:  int = 0
+class RingkasanAbsensiSiswaRangeOut(BaseModel):
+    id_siswa:   int
+    nama_siswa: str
+    nisn:       Optional[str] = None   # ← TAMBAH INI
+    hadir:      int = 0
+    sakit:      int = 0
+    izin:       int = 0
+    alpha:      int = 0
+    total_hari: int = 0
+
+    class Config:
+        from_attributes = True
 
 
 class SiswaAbsensiItem(BaseModel):
@@ -712,14 +716,12 @@ class CatatanRangeOut(BaseModel):
  
  
 class LaporanCatatanSiswaOut(BaseModel):
-    """
-    Data catatan satu siswa dalam laporan kelas (range tanggal).
-    """
     id_siswa:       int
     nama_siswa:     str
+    nisn:           Optional[str] = None   # ← TAMBAH INI
     jumlah_catatan: int = 0
     catatan:        List[CatatanRangeOut] = []
- 
+
     class Config:
         from_attributes = True
  

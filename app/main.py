@@ -626,14 +626,11 @@ async def edit_pesan(
     db.commit()
     db.refresh(pesan)  # ← TAMBAHKAN INI
 
-    try:
-        await ws_manager.kirim_ke_akun(pesan.id_penerima, {
-            "type": "edit_pesan",
-            "id_pesan": id_pesan,
-            "isi_pesan": pesan.isi_pesan,
-        })
-    except Exception:
-        pass
+    await ws_manager.kirim_ke_akun(pesan.id_penerima, {
+        "type":      "edit_pesan",
+        "id_pesan":  id_pesan,
+        "isi_pesan": pesan.isi_pesan,
+    })
     return {"message": "Pesan berhasil diubah"}
 
 

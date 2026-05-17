@@ -6,7 +6,10 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy import extract, func
 from app import models, schemas
-
+from datetime import date
+from sqlalchemy import and_, func
+ 
+ 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 DEFAULT_PASSWORD = "tkqoulansadid"
 
@@ -774,4 +777,185 @@ def _hitung_statistik_laporan(data: list) -> dict:
         "total":         len(data),
         "total_selesai": total_selesai,
         "total_belum":   len(data) - total_selesai,
-    }    
+    }  
+    
+    
+# ─── Rekap Absensi Siswa (range tanggal) ──────────────────────────────────────
+ 
+def get_rekap_absensi_siswa_range(
+    db: Session,
+    id_siswa: int,
+    tanggal_awal: date,
+    tanggal_akhir: date,
+) -> dict:
+    """
+    Hitung hadir/sakit/izin/alpha satu siswa dalam rentang tanggal.
+    Return dict langsung (bukan ORM object).
+    """
+    rows = (
+        db.query(models.Absensi.status, func.count(models.Absensi.id_absensi))
+        .filter(
+            models.Absensi.id_siswa == id_siswa,
+            models.Absensi.tanggal >= tanggal_awal,
+            models.Absensi.tanggal <= tanggal_akhir,
+        )
+        .group_by(models.Absensi.status)
+        .all()
+    )
+    result = {"hadir": 0, "sakit": 0, "izin": 0, "alpha": 0}
+    for status_val, jumlah in rows:
+        result[status_val.value] = jumlah
+    result["total_hari"] = sum(result.values())
+    return result
+ 
+ 
+# ─── Catatan Harian Siswa (range tanggal, hanya target satu_siswa) ────────────
+ 
+def get_catatan_siswa_range(
+    db: Session,
+    id_siswa: int,
+    tanggal_awal: date,
+    tanggal_akhir: date,
+) -> List[models.CatatanHarian]:
+    """
+    Ambil catatan harian satu siswa dalam rentang tanggal.
+    HANYA target = 'satu_siswa' (sesuai spesifikasi laporan).
+    Diurutkan ascending berdasarkan tanggal.
+    """
+    return (
+        db.query(models.CatatanHarian)
+        .filter(
+            models.CatatanHarian.target == models.TargetCatatanEnum.satu_siswa,
+            models.CatatanHarian.id_siswa == id_siswa,
+            models.CatatanHarian.tanggal >= tanggal_awal,
+            models.CatatanHarian.tanggal <= tanggal_akhir,
+        )
+        .order_by(models.CatatanHarian.tanggal.asc())
+        .all()
+    )
+ 
+ 
+# ─── Daftar Siswa dalam Kelas ──────────────────────────────────────────────────
+ 
+def get_siswa_by_kelas(
+    db: Session,
+    id_kelas: int,
+) -> List[models.Siswa]:
+    """
+    Ambil semua siswa dalam satu kelas, diurutkan berdasarkan nama.
+    """
+    return (
+        db.query(models.Siswa)
+        .filter(models.Siswa.id_kelas == id_kelas)
+        .order_by(models.Siswa.nama_siswa)
+        .all()
+    )
+ 
+ 
+# ─── Laporan Absensi Kelas (range tanggal) ────────────────────────────────────
+ 
+def get_laporan_absensi_kelas_range(
+    db: Session,
+    id_kelas: int,
+    tanggal_awal: date,
+    tanggal_akhir: date,
+) -> Optional[schemas.LaporanAbsensiKelasOut]:
+    """
+    Rekap absensi seluruh siswa dalam satu kelas berdasarkan rentang tanggal.
+    Return LaporanAbsensiKelasOut atau None jika kelas tidak ditemukan.
+    """
+    kelas = db.get(models.Kelas, id_kelas)
+    if not kelas:
+        return None
+ 
+    siswa_list = get_siswa_by_kelas(db, id_kelas)
+ 
+    detail_siswa = []
+    total_hadir = total_sakit = total_izin = total_alpha = 0
+ 
+    for siswa in siswa_list:
+        rekap = get_rekap_absensi_siswa_range(
+            db, siswa.id_siswa, tanggal_awal, tanggal_akhir
+        )
+        total_hadir += rekap["hadir"]
+        total_sakit += rekap["sakit"]
+        total_izin  += rekap["izin"]
+        total_alpha += rekap["alpha"]
+ 
+        detail_siswa.append(
+            schemas.RingkasanAbsensiSiswaRangeOut(
+                id_siswa   = siswa.id_siswa,
+                nama_siswa = siswa.nama_siswa,
+                hadir      = rekap["hadir"],
+                sakit      = rekap["sakit"],
+                izin       = rekap["izin"],
+                alpha      = rekap["alpha"],
+                total_hari = rekap["total_hari"],
+            )
+        )
+ 
+    return schemas.LaporanAbsensiKelasOut(
+        id_kelas      = id_kelas,
+        nama_kelas    = kelas.nama_kelas,
+        tanggal_awal  = tanggal_awal,
+        tanggal_akhir = tanggal_akhir,
+        total_siswa   = len(siswa_list),
+        total_hadir   = total_hadir,
+        total_sakit   = total_sakit,
+        total_izin    = total_izin,
+        total_alpha   = total_alpha,
+        siswa         = detail_siswa,
+    )
+ 
+ 
+# ─── Laporan Catatan Kelas (range tanggal, per siswa) ─────────────────────────
+ 
+def get_laporan_catatan_kelas_range(
+    db: Session,
+    id_kelas: int,
+    tanggal_awal: date,
+    tanggal_akhir: date,
+) -> Optional[schemas.LaporanCatatanKelasOut]:
+    """
+    Ambil catatan harian (target=satu_siswa) untuk seluruh siswa dalam satu kelas.
+    Return LaporanCatatanKelasOut atau None jika kelas tidak ditemukan.
+    """
+    kelas = db.get(models.Kelas, id_kelas)
+    if not kelas:
+        return None
+ 
+    siswa_list = get_siswa_by_kelas(db, id_kelas)
+ 
+    data_siswa = []
+    for siswa in siswa_list:
+        catatan_list = get_catatan_siswa_range(
+            db, siswa.id_siswa, tanggal_awal, tanggal_akhir
+        )
+ 
+        catatan_out = [
+            schemas.CatatanRangeOut(
+                id_catatan = c.id_catatan,
+                tanggal    = c.tanggal.date() if hasattr(c.tanggal, 'date') else c.tanggal,
+                judul      = c.judul,
+                isi        = c.isi,
+            )
+            for c in catatan_list
+        ]
+ 
+        data_siswa.append(
+            schemas.LaporanCatatanSiswaOut(
+                id_siswa       = siswa.id_siswa,
+                nama_siswa     = siswa.nama_siswa,
+                jumlah_catatan = len(catatan_out),
+                catatan        = catatan_out,
+            )
+        )
+ 
+    return schemas.LaporanCatatanKelasOut(
+        id_kelas      = id_kelas,
+        nama_kelas    = kelas.nama_kelas,
+        tanggal_awal  = tanggal_awal,
+        tanggal_akhir = tanggal_akhir,
+        total_siswa   = len(siswa_list),
+        siswa         = data_siswa,
+    )      

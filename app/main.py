@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
 from fastapi.staticfiles import StaticFiles
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER, TA_LEFT  # noqa: F401 (TA_LEFT kept for future use)
+from reportlab.lib.enums import TA_CENTER, TA_LEFT  # noqa: F401
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
@@ -62,11 +62,7 @@ app.add_middleware(
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
-# ─── Router Laporan (didefinisikan sekali di sini) ────────────────────────────
-# FIX: `router` tidak pernah didefinisikan — endpoint /absensi, /catatan,
-#      /pdf/absensi, /pdf/catatan menggunakan `router` yang undefined.
-#      Semua endpoint laporan digabung ke satu APIRouter dengan prefix "/laporan".
-router_laporan = APIRouter(prefix="/laporan", tags=["Laporan Otomatis"])
+router_laporan = APIRouter(prefix="/laporan", tags=["Laporan"])
 
 
 # ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -122,18 +118,10 @@ def _get_guru_or_403(db: Session, id_akun: int) -> models.Guru:
 
 
 def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int):
-    """Raise 403 jika wali siswa mencoba akses data bukan anaknya."""
     if current_user.role == models.RoleEnum.wali_siswa:
         wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
         if not wali or wali.id_siswa != id_siswa:
             raise HTTPException(status_code=403, detail="Akses ditolak")
-
-
-def _validasi_periode(bulan: int, tahun: int):
-    if not (1 <= bulan <= 12):
-        raise HTTPException(status_code=422, detail="Bulan harus antara 1–12")
-    if not (2000 <= tahun <= date.today().year):
-        raise HTTPException(status_code=422, detail="Tahun tidak valid")
 
 
 # ─── Startup ──────────────────────────────────────────────────────────────────
@@ -176,7 +164,6 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
             detail="Username atau password salah",
             headers={"WWW-Authenticate": "Bearer"},
         )
-
     device_id = payload.device_id
     if device_id and akun.device_id and akun.device_id != device_id:
         raise HTTPException(
@@ -186,11 +173,9 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
                 "Logout terlebih dahulu sebelum login di sini."
             ),
         )
-
     if device_id:
         akun.device_id = device_id
         db.commit()
-
     token = create_access_token({
         "id_akun":     akun.id_akun,
         "username":    akun.username,
@@ -201,10 +186,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/logout", tags=["Auth"])
-def logout(
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def logout(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     current_user.device_id = None
     db.commit()
     return {"message": "Logout berhasil"}
@@ -239,12 +221,7 @@ def get_akun(id_akun: int, db: Session = Depends(get_db), _=Depends(get_current_
 
 
 @app.put("/akun/{id_akun}", response_model=schemas.AkunOut, tags=["Akun"])
-def update_akun(
-    id_akun: int,
-    akun: schemas.AkunUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def update_akun(id_akun: int, akun: schemas.AkunUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
     obj = crud.update_akun(db, id_akun, akun)
     if not obj:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
@@ -270,11 +247,7 @@ def selesai_setup(id_akun: int, db: Session = Depends(get_db)):
 
 
 @app.post("/akun/{id_akun}/ganti-password-firstlogin", response_model=schemas.AkunOut, tags=["Akun"])
-def ganti_password_first_login(
-    id_akun: int,
-    payload: schemas.GantiPasswordFirstLoginRequest,
-    db: Session = Depends(get_db),
-):
+def ganti_password_first_login(id_akun: int, payload: schemas.GantiPasswordFirstLoginRequest, db: Session = Depends(get_db)):
     akun = crud.get_akun(db, id_akun)
     if not akun:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
@@ -288,30 +261,20 @@ def ganti_password_first_login(
 
 
 @app.post("/akun/create-with-role", response_model=schemas.AkunOut, status_code=201, tags=["Akun"])
-async def create_akun_with_role(
-    request: Request,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+async def create_akun_with_role(request: Request, db: Session = Depends(get_db), _=Depends(require_admin)):
     try:
         body = json.loads(await request.body())
         data = schemas.AkunCreateWithRole(**body)
     except Exception as e:
         raise HTTPException(status_code=422, detail=str(e))
-
     if crud.get_akun_by_username(db, data.username):
         raise HTTPException(status_code=400, detail="Username sudah digunakan")
-
     if data.role == schemas.RoleEnum.admin:
-        return crud.create_admin_with_akun(
-            db, schemas.AdminCreate(username=data.username, nama=data.nama)
-        ).akun
+        return crud.create_admin_with_akun(db, schemas.AdminCreate(username=data.username, nama=data.nama)).akun
     if data.role == schemas.RoleEnum.kepala_sekolah:
         if data.nip and crud.get_kepsek_by_nip(db, data.nip):
             raise HTTPException(status_code=400, detail="NIP sudah terdaftar")
-        return crud.create_kepsek_with_akun(
-            db, schemas.KepsekCreate(username=data.username, nama=data.nama, nip=data.nip)
-        ).akun
+        return crud.create_kepsek_with_akun(db, schemas.KepsekCreate(username=data.username, nama=data.nama, nip=data.nip)).akun
     raise HTTPException(status_code=400, detail="Gunakan endpoint /guru/ untuk role guru")
 
 
@@ -364,11 +327,7 @@ def list_reset_password(skip=0, limit=100, db: Session = Depends(get_db), _=Depe
 
 
 @app.put("/reset-password/{id_pertanyaan}", response_model=schemas.ResetPasswordOut, tags=["Reset Password"])
-def update_reset_password(
-    id_pertanyaan: int,
-    rp: schemas.ResetPasswordUpdate,
-    db: Session = Depends(get_db),
-):
+def update_reset_password(id_pertanyaan: int, rp: schemas.ResetPasswordUpdate, db: Session = Depends(get_db)):
     obj = crud.update_reset_password(db, id_pertanyaan, rp)
     if not obj:
         raise HTTPException(status_code=404, detail="Pertanyaan tidak ditemukan")
@@ -376,11 +335,7 @@ def update_reset_password(
 
 
 @app.delete("/reset-password/{id_pertanyaan}", tags=["Reset Password"])
-def delete_reset_password(
-    id_pertanyaan: int,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def delete_reset_password(id_pertanyaan: int, db: Session = Depends(get_db), _=Depends(require_admin)):
     if not crud.delete_reset_password(db, id_pertanyaan):
         raise HTTPException(status_code=404, detail="Pertanyaan tidak ditemukan")
     return {"message": f"Pertanyaan {id_pertanyaan} berhasil dihapus"}
@@ -407,12 +362,7 @@ def get_kelas(id_kelas: int, db: Session = Depends(get_db), _=Depends(get_curren
 
 
 @app.put("/kelas/{id_kelas}", response_model=schemas.KelasOut, tags=["Kelas"])
-def update_kelas(
-    id_kelas: int,
-    kelas: schemas.KelasUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def update_kelas(id_kelas: int, kelas: schemas.KelasUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
     obj = crud.update_kelas(db, id_kelas, kelas)
     if not obj:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
@@ -454,12 +404,7 @@ def get_guru(id_guru: int, db: Session = Depends(get_db), _=Depends(get_current_
 
 
 @app.put("/guru/{id_guru}", response_model=schemas.GuruOut, tags=["Guru"])
-def update_guru(
-    id_guru: int,
-    guru: schemas.GuruUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def update_guru(id_guru: int, guru: schemas.GuruUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
     for id_k in (guru.list_id_kelas or []):
         if not crud.get_kelas(db, id_k):
             raise HTTPException(status_code=404, detail=f"Kelas {id_k} tidak ditemukan")
@@ -522,12 +467,7 @@ def get_kepsek(id_kepsek: int, db: Session = Depends(get_db), _=Depends(get_curr
 
 
 @app.put("/kepala-sekolah/{id_kepsek}", response_model=schemas.KepsekOut, tags=["Kepala Sekolah"])
-def update_kepsek(
-    id_kepsek: int,
-    data: schemas.KepsekUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def update_kepsek(id_kepsek: int, data: schemas.KepsekUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
     obj = crud.update_kepsek(db, id_kepsek, data)
     if not obj:
         raise HTTPException(status_code=404, detail="Kepala sekolah tidak ditemukan")
@@ -568,12 +508,7 @@ def get_siswa(id_siswa: int, db: Session = Depends(get_db), _=Depends(get_curren
 
 
 @app.put("/siswa/{id_siswa}", response_model=schemas.SiswaOut, tags=["Siswa"])
-def update_siswa(
-    id_siswa: int,
-    data: schemas.SiswaUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def update_siswa(id_siswa: int, data: schemas.SiswaUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
     if data.id_kelas and not crud.get_kelas(db, data.id_kelas):
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     obj = crud.update_siswa(db, id_siswa, data)
@@ -592,12 +527,7 @@ def delete_siswa(id_siswa: int, db: Session = Depends(get_db), _=Depends(require
 # ─── Wali Siswa ───────────────────────────────────────────────────────────────
 
 @app.put("/wali-siswa/{id_wali_siswa}", response_model=schemas.WaliSiswaOut, tags=["Wali Siswa"])
-def update_wali_siswa(
-    id_wali_siswa: int,
-    data: schemas.WaliSiswaUpdate,
-    db: Session = Depends(get_db),
-    _=Depends(require_admin),
-):
+def update_wali_siswa(id_wali_siswa: int, data: schemas.WaliSiswaUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
     obj = crud.update_wali_siswa(db, id_wali_siswa, data)
     if not obj:
         raise HTTPException(status_code=404, detail="Wali siswa tidak ditemukan")
@@ -605,11 +535,7 @@ def update_wali_siswa(
 
 
 @app.get("/wali-siswa/by-akun/{id_akun}", response_model=schemas.WaliSiswaOut, tags=["Wali Siswa"])
-def get_wali_by_akun(
-    id_akun: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_wali_by_akun(id_akun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role == models.RoleEnum.wali_siswa and current_user.id_akun != id_akun:
         raise HTTPException(status_code=403, detail="Akses ditolak")
     obj = crud.get_wali_siswa_by_akun(db, id_akun)
@@ -621,14 +547,9 @@ def get_wali_by_akun(
 # ─── Pesan ────────────────────────────────────────────────────────────────────
 
 @app.post("/pesan/", response_model=schemas.PesanOut, status_code=201, tags=["Pesan"])
-def kirim_pesan(
-    data: schemas.PesanCreate,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if not crud.get_akun(db, data.id_penerima):
         raise HTTPException(status_code=404, detail="Penerima tidak ditemukan")
-
     pesan = models.Pesan(
         id_pengirim=current_user.id_akun,
         id_penerima=data.id_penerima,
@@ -638,7 +559,6 @@ def kirim_pesan(
     db.add(pesan)
     db.commit()
     db.refresh(pesan)
-
     crud.kirim_notif_pesan(
         db,
         id_akun_penerima=pesan.id_penerima,
@@ -659,30 +579,24 @@ def kirim_pesan(
 
 @app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOut], tags=["Pesan"])
 def get_riwayat_percakapan(
-    id_a: int,
-    id_b: int,
+    id_a: int, id_b: int,
     after_id: Optional[int] = Query(None),
-    skip: int = Query(0),
-    limit: int = Query(200),
+    skip: int = Query(0), limit: int = Query(200),
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
     if current_user.id_akun not in (id_a, id_b):
         raise HTTPException(status_code=403, detail="Akses ditolak")
-
     kedua_arah = or_(
         and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
         and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
     )
-
     if after_id is not None:
         return (
             db.query(models.Pesan)
             .filter(kedua_arah, models.Pesan.id_pesan > after_id)
-            .order_by(models.Pesan.waktu.asc())
-            .all()
+            .order_by(models.Pesan.waktu.asc()).all()
         )
-
     lawan_id = id_b if current_user.id_akun == id_a else id_a
     db.query(models.Pesan).filter(
         models.Pesan.id_pengirim == lawan_id,
@@ -690,23 +604,14 @@ def get_riwayat_percakapan(
         models.Pesan.status == models.StatusPesanEnum.terkirim,
     ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
     db.commit()
-
     return (
-        db.query(models.Pesan)
-        .filter(kedua_arah)
-        .order_by(models.Pesan.waktu.asc())
-        .offset(skip)
-        .limit(limit)
-        .all()
+        db.query(models.Pesan).filter(kedua_arah)
+        .order_by(models.Pesan.waktu.asc()).offset(skip).limit(limit).all()
     )
 
 
 @app.put("/pesan/baca", tags=["Pesan"])
-def tandai_dibaca(
-    data: schemas.TandaiBacaRequest,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     db.query(models.Pesan).filter(
         models.Pesan.id_pengirim == data.id_pengirim,
         models.Pesan.id_penerima == current_user.id_akun,
@@ -717,44 +622,30 @@ def tandai_dibaca(
 
 
 @app.get("/pesan/percakapan/{id_akun}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])
-def get_daftar_percakapan(
-    id_akun: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.id_akun != id_akun:
         raise HTTPException(status_code=403, detail="Akses ditolak")
-
     semua_pesan = (
         db.query(models.Pesan)
         .filter(or_(models.Pesan.id_pengirim == id_akun, models.Pesan.id_penerima == id_akun))
-        .order_by(models.Pesan.waktu.desc())
-        .all()
+        .order_by(models.Pesan.waktu.desc()).all()
     )
-
     hasil, sudah = [], set()
     for p in semua_pesan:
         lawan_id = p.id_penerima if p.id_pengirim == id_akun else p.id_pengirim
         if lawan_id in sudah:
             continue
         sudah.add(lawan_id)
-
         lawan_akun = crud.get_akun(db, lawan_id)
         if not lawan_akun:
             continue
-
         wali = db.query(models.WaliSiswa).filter(models.WaliSiswa.id_akun == lawan_id).first()
         nama_siswa = wali.siswa.nama_siswa if wali and wali.siswa else None
-
         belum_dibaca = db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == lawan_id,
             models.Pesan.id_penerima == id_akun,
-            models.Pesan.status.in_([
-                models.StatusPesanEnum.terkirim,
-                models.StatusPesanEnum.diterima,
-            ]),
+            models.Pesan.status.in_([models.StatusPesanEnum.terkirim, models.StatusPesanEnum.diterima]),
         ).count()
-
         hasil.append(schemas.PercakapanItem(
             id_akun_lawan=lawan_id,
             nama_lawan=lawan_akun.nama,
@@ -769,13 +660,9 @@ def get_daftar_percakapan(
 
 
 @app.get("/pesan/semua-guru", response_model=List[schemas.GuruListItem], tags=["Pesan"])
-def get_semua_guru(
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.wali_siswa:
         raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
-
     guru_list = db.query(models.Guru).join(models.Akun).all()
     hasil = []
     for guru in guru_list:
@@ -786,8 +673,7 @@ def get_semua_guru(
                 and_(models.Pesan.id_pengirim == current_user.id_akun, models.Pesan.id_penerima == gid),
                 and_(models.Pesan.id_pengirim == gid, models.Pesan.id_penerima == current_user.id_akun),
             ))
-            .order_by(models.Pesan.waktu.desc())
-            .first()
+            .order_by(models.Pesan.waktu.desc()).first()
         )
         belum = db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == gid,
@@ -808,10 +694,7 @@ def get_semua_guru(
 
 
 @app.get("/pesan/semua-wali", response_model=List[schemas.WaliListItem], tags=["Pesan"])
-def get_semua_wali(
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     return [
@@ -828,22 +711,15 @@ def get_semua_wali(
 # ─── Absensi ──────────────────────────────────────────────────────────────────
 
 @app.get("/absensi/kelas/{id_kelas}", response_model=List[schemas.SiswaAbsensiItem], tags=["Absensi"])
-def get_siswa_absensi(
-    id_kelas: int,
-    tanggal: date,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     if not crud.get_kelas(db, id_kelas):
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-
     siswa_list = (
         db.query(models.Siswa)
         .filter(models.Siswa.id_kelas == id_kelas)
-        .order_by(models.Siswa.nama_siswa)
-        .all()
+        .order_by(models.Siswa.nama_siswa).all()
     )
     id_list = [s.id_siswa for s in siswa_list]
     absensi_map = {}
@@ -867,23 +743,15 @@ def get_siswa_absensi(
 
 
 @app.post("/absensi/batch", response_model=List[schemas.AbsensiOut], tags=["Absensi"])
-def simpan_absensi_batch(
-    payload: schemas.AbsensiBatchRequest,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id_akun)
-
     hasil = []
     for item in payload.data:
         siswa = crud.get_siswa(db, item.id_siswa)
         if not siswa or siswa.id_kelas != payload.id_kelas:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Siswa {item.id_siswa} tidak ada di kelas {payload.id_kelas}",
-            )
+            raise HTTPException(status_code=400, detail=f"Siswa {item.id_siswa} tidak ada di kelas {payload.id_kelas}")
         existing = db.query(models.Absensi).filter(
             models.Absensi.id_siswa == item.id_siswa,
             models.Absensi.tanggal == payload.tanggal,
@@ -895,34 +763,21 @@ def simpan_absensi_batch(
             hasil.append(existing)
         else:
             ab = models.Absensi(
-                id_siswa=item.id_siswa,
-                id_guru=guru.id_guru,
-                tanggal=payload.tanggal,
-                status=item.status,
-                keterangan=item.keterangan,
+                id_siswa=item.id_siswa, id_guru=guru.id_guru,
+                tanggal=payload.tanggal, status=item.status, keterangan=item.keterangan,
             )
             db.add(ab)
             hasil.append(ab)
     db.commit()
     for ab in hasil:
         db.refresh(ab)
-
     if hasil:
-        crud.kirim_notif_absensi_batch(
-            db, payload.id_kelas, str(payload.tanggal),
-            current_user.nama, hasil[0].id_absensi,
-        )
+        crud.kirim_notif_absensi_batch(db, payload.id_kelas, str(payload.tanggal), current_user.nama, hasil[0].id_absensi)
     return hasil
 
 
 @app.get("/absensi/siswa/{id_siswa}", response_model=List[schemas.AbsensiHarianSiswaOut], tags=["Absensi"])
-def get_absensi_siswa(
-    id_siswa: int,
-    bulan: int,
-    tahun: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     _cek_wali_akses_siswa(db, current_user, id_siswa)
     records = db.query(models.Absensi).filter(
         models.Absensi.id_siswa == id_siswa,
@@ -931,12 +786,8 @@ def get_absensi_siswa(
     ).order_by(models.Absensi.tanggal).all()
     return [
         schemas.AbsensiHarianSiswaOut(
-            id_absensi=ab.id_absensi,
-            id_siswa=ab.id_siswa,
-            id_guru=ab.id_guru,
-            tanggal=ab.tanggal,
-            status=ab.status,
-            keterangan=ab.keterangan,
+            id_absensi=ab.id_absensi, id_siswa=ab.id_siswa, id_guru=ab.id_guru,
+            tanggal=ab.tanggal, status=ab.status, keterangan=ab.keterangan,
             nama_guru=ab.guru.akun.nama if ab.guru and ab.guru.akun else None,
         )
         for ab in records
@@ -944,13 +795,7 @@ def get_absensi_siswa(
 
 
 @app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiOut, tags=["Absensi"])
-def get_ringkasan_absensi(
-    id_siswa: int,
-    bulan: int,
-    tahun: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_ringkasan_absensi(id_siswa: int, bulan: int, tahun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     _cek_wali_akses_siswa(db, current_user, id_siswa)
     records = db.query(models.Absensi).filter(
         models.Absensi.id_siswa == id_siswa,
@@ -969,11 +814,7 @@ def get_ringkasan_absensi(
 # ─── Catatan Harian ───────────────────────────────────────────────────────────
 
 @app.post("/catatan/", response_model=schemas.CatatanHarianOut, status_code=201, tags=["Catatan Harian"])
-def buat_catatan(
-    payload: schemas.CatatanHarianCreate,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def buat_catatan(payload: schemas.CatatanHarianCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
     guru = _get_guru_or_403(db, current_user.id_akun)
@@ -989,13 +830,7 @@ def buat_catatan(
 
 
 @app.get("/catatan/siswa/{id_siswa}", response_model=schemas.CatatanListResponse, tags=["Catatan Harian"])
-def get_catatan_siswa(
-    id_siswa: int,
-    skip=0,
-    limit=20,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_catatan_siswa(id_siswa: int, skip=0, limit=20, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     siswa = crud.get_siswa(db, id_siswa)
     if not siswa:
         raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
@@ -1004,35 +839,20 @@ def get_catatan_siswa(
         if not wali or wali.id_siswa != id_siswa:
             raise HTTPException(status_code=403, detail="Anda hanya dapat melihat catatan anak Anda")
     catatan_list = crud.get_catatan_by_siswa(db, id_siswa, siswa.id_kelas, skip, limit)
-    return schemas.CatatanListResponse(
-        total=len(catatan_list),
-        data=[crud._build_catatan_out(c) for c in catatan_list],
-    )
+    return schemas.CatatanListResponse(total=len(catatan_list), data=[crud._build_catatan_out(c) for c in catatan_list])
 
 
 @app.get("/catatan/guru/", response_model=schemas.CatatanListResponse, tags=["Catatan Harian"])
-def get_catatan_by_guru_login(
-    skip=0,
-    limit=50,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_catatan_by_guru_login(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id_akun)
     catatan_list = crud.get_catatan_by_guru(db, guru.id_guru, skip, limit)
-    return schemas.CatatanListResponse(
-        total=len(catatan_list),
-        data=[crud._build_catatan_out(c) for c in catatan_list],
-    )
+    return schemas.CatatanListResponse(total=len(catatan_list), data=[crud._build_catatan_out(c) for c in catatan_list])
 
 
 @app.get("/catatan/{id_catatan}", response_model=schemas.CatatanHarianOut, tags=["Catatan Harian"])
-def get_catatan_detail(
-    id_catatan: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_catatan_detail(id_catatan: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     catatan = crud.get_catatan_harian(db, id_catatan)
     if not catatan:
         raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
@@ -1041,10 +861,8 @@ def get_catatan_detail(
         siswa = crud.get_siswa(db, wali.id_siswa) if wali and wali.id_siswa else None
         visible = (
             catatan.target == models.TargetCatatanEnum.semua_kelas or
-            (catatan.target == models.TargetCatatanEnum.satu_kelas and
-             siswa and siswa.id_kelas == catatan.id_kelas) or
-            (catatan.target == models.TargetCatatanEnum.satu_siswa and
-             wali and wali.id_siswa == catatan.id_siswa)
+            (catatan.target == models.TargetCatatanEnum.satu_kelas and siswa and siswa.id_kelas == catatan.id_kelas) or
+            (catatan.target == models.TargetCatatanEnum.satu_siswa and wali and wali.id_siswa == catatan.id_siswa)
         )
         if not visible:
             raise HTTPException(status_code=403, detail="Akses ditolak")
@@ -1052,12 +870,7 @@ def get_catatan_detail(
 
 
 @app.put("/catatan/{id_catatan}", response_model=schemas.CatatanHarianOut, tags=["Catatan Harian"])
-def update_catatan(
-    id_catatan: int,
-    payload: schemas.CatatanHarianUpdate,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def update_catatan(id_catatan: int, payload: schemas.CatatanHarianUpdate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengedit catatan")
     catatan = crud.get_catatan_harian(db, id_catatan)
@@ -1070,11 +883,7 @@ def update_catatan(
 
 
 @app.delete("/catatan/{id_catatan}", tags=["Catatan Harian"])
-def delete_catatan(
-    id_catatan: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def delete_catatan(id_catatan: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     catatan = crud.get_catatan_harian(db, id_catatan)
     if not catatan:
         raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
@@ -1089,12 +898,7 @@ def delete_catatan(
 
 
 @app.post("/catatan/{id_catatan}/upload-foto", tags=["Catatan Harian"])
-async def upload_foto_catatan(
-    id_catatan: int,
-    file: UploadFile = File(...),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+async def upload_foto_catatan(id_catatan: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat upload foto")
     catatan = crud.get_catatan_harian(db, id_catatan)
@@ -1103,17 +907,14 @@ async def upload_foto_catatan(
     guru = _get_guru_or_403(db, current_user.id_akun)
     if catatan.id_guru != guru.id_guru:
         raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
-
     if catatan.foto:
         lama = os.path.join(FOTO_DIR, catatan.foto)
         if os.path.exists(lama):
             os.remove(lama)
-
     ext = os.path.splitext(file.filename)[1].lower()
     nama_file = f"{uuid.uuid4().hex}{ext}"
     with open(os.path.join(FOTO_DIR, nama_file), "wb") as f:
         shutil.copyfileobj(file.file, f)
-
     catatan.foto = nama_file
     db.commit()
     return {"nama_file": nama_file, "url": f"/static/foto/{nama_file}"}
@@ -1122,12 +923,7 @@ async def upload_foto_catatan(
 # ─── Notifikasi ───────────────────────────────────────────────────────────────
 
 @app.get("/notifikasi/", response_model=schemas.NotifikasiListResponse, tags=["Notifikasi"])
-def get_notifikasi(
-    skip=0,
-    limit=50,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def get_notifikasi(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     return schemas.NotifikasiListResponse(
         total_belum_dibaca=crud.count_notif_belum_dibaca(db, current_user.id_akun),
         data=crud.get_notifikasi_by_akun(db, current_user.id_akun, skip, limit),
@@ -1135,92 +931,18 @@ def get_notifikasi(
 
 
 @app.put("/notifikasi/baca", tags=["Notifikasi"])
-def tandai_notif_dibaca(
-    payload: schemas.BacaNotifRequest,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+def tandai_notif_dibaca(payload: schemas.BacaNotifRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     jumlah = crud.tandai_notif_dibaca(db, current_user.id_akun, payload.id_notif)
     return {"message": f"{jumlah} notifikasi ditandai sudah dibaca", "jumlah": jumlah}
 
 
-# ─── Laporan Otomatis ─────────────────────────────────────────────────────────
+# ─── Laporan ──────────────────────────────────────────────────────────────────
+# PENTING: urutan route — spesifik dulu, baru /{id_laporan}
+# FastAPI membaca dari atas ke bawah; "/{id_laporan}" akan menangkap
+# "/absensi", "/catatan", "/guru/", "/pdf/..." jika diletakkan lebih atas.
 
-@router_laporan.get(
-    "/otomatis/siswa/{id_siswa}",
-    response_model=schemas.LaporanSiswaOut,
-    summary="Laporan otomatis per siswa (absensi + catatan)",
-)
-def laporan_otomatis_siswa(
-    id_siswa: int,
-    bulan: int = Query(default=None, ge=1, le=12),
-    tahun: int = Query(default=None, ge=2000),
-    limit_catatan: int = Query(default=20, ge=1, le=100),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    today = date.today()
-    bulan = bulan or today.month
-    tahun = tahun or today.year
-    _validasi_periode(bulan, tahun)
-
-    if current_user.role == models.RoleEnum.wali_siswa:
-        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
-        if not wali or wali.id_siswa != id_siswa:
-            raise HTTPException(status_code=403, detail="Akses ditolak")
-
-    laporan = crud.get_laporan_otomatis_siswa(db, id_siswa, bulan, tahun, limit_catatan)
-    if laporan is None:
-        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
-    return laporan
-
-
-@router_laporan.get(
-    "/otomatis/kelas/{id_kelas}",
-    response_model=schemas.LaporanKelasOut,
-    summary="Laporan otomatis per kelas (rekap absensi semua siswa)",
-)
-def laporan_otomatis_kelas(
-    id_kelas: int,
-    bulan: int = Query(default=None, ge=1, le=12),
-    tahun: int = Query(default=None, ge=2000),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    today = date.today()
-    bulan = bulan or today.month
-    tahun = tahun or today.year
-    _validasi_periode(bulan, tahun)
-
-    if current_user.role not in (
-        models.RoleEnum.guru, models.RoleEnum.kepala_sekolah, models.RoleEnum.admin
-    ):
-        raise HTTPException(status_code=403, detail="Akses ditolak")
-
-    if current_user.role == models.RoleEnum.guru:
-        guru = crud.get_guru_by_akun(db, current_user.id_akun)
-        if not guru:
-            raise HTTPException(status_code=403, detail="Data guru tidak ditemukan")
-        if id_kelas not in crud.decode_id_kelas(guru.id_kelas):
-            raise HTTPException(status_code=403, detail="Kelas bukan milik guru ini")
-
-    laporan = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
-    if laporan is None:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    return laporan
-
-
-@router_laporan.post(
-    "/",
-    response_model=schemas.LaporanOut,
-    status_code=201,
-    summary="Guru membuat laporan baru untuk satu siswa",
-)
-def buat_laporan(
-    payload: schemas.LaporanCreate,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+@router_laporan.post("/", response_model=schemas.LaporanOut, status_code=201, summary="Guru membuat laporan baru untuk satu siswa")
+def buat_laporan(payload: schemas.LaporanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat laporan")
     guru = _get_guru_or_403(db, current_user.id_akun)
@@ -1230,38 +952,104 @@ def buat_laporan(
     return crud._build_laporan_out(lap)
 
 
-@router_laporan.get(
-    "/guru/",
-    response_model=schemas.LaporanListResponse,
-    summary="Daftar laporan milik guru yang sedang login",
-)
-def list_laporan_guru(
-    skip: int = 0,
-    limit: int = 50,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+@router_laporan.get("/guru/", response_model=schemas.LaporanListResponse, summary="Daftar laporan milik guru yang sedang login")
+def list_laporan_guru(skip: int = 0, limit: int = 50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id_akun)
     data = crud.get_laporan_by_guru(db, guru.id_guru, skip, limit)
     stat = crud._hitung_statistik_laporan(data)
-    return schemas.LaporanListResponse(
-        **stat,
-        data=[crud._build_laporan_out(l) for l in data],
-    )
+    return schemas.LaporanListResponse(**stat, data=[crud._build_laporan_out(l) for l in data])
 
 
-@router_laporan.get(
-    "/{id_laporan}",
-    response_model=schemas.LaporanOut,
-    summary="Detail satu laporan",
-)
-def get_laporan_detail(
-    id_laporan: int,
+@router_laporan.get("/absensi", response_model=schemas.LaporanAbsensiKelasOut, summary="[GURU] Rekap absensi seluruh siswa satu kelas (range tanggal)")
+def get_laporan_absensi(
+    id_kelas: int = Query(..., description="ID kelas"),
+    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
+    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
+    if tanggal_awal > tanggal_akhir:
+        raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
+    result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    return result
+
+
+@router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut, summary="[GURU] Daftar catatan harian semua siswa satu kelas (range tanggal)")
+def get_laporan_catatan(
+    id_kelas: int = Query(..., description="ID kelas"),
+    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
+    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if tanggal_awal > tanggal_akhir:
+        raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
+    result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    return result
+
+
+@router_laporan.get("/pdf/absensi", summary="[GURU] Generate PDF laporan absensi satu kelas")
+def download_pdf_absensi(
+    id_kelas: int = Query(..., description="ID kelas"),
+    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
+    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if tanggal_awal > tanggal_akhir:
+        raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
+    data = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
+    if not data:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    pdf_bytes = _generate_pdf_absensi(data)
+    nama_file = f"laporan_absensi_{data.nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
+    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{nama_file}"'})
+
+
+@router_laporan.get("/pdf/catatan", summary="[GURU] Generate PDF laporan catatan harian satu siswa")
+def download_pdf_catatan(
+    id_siswa: int = Query(..., description="ID siswa"),
+    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
+    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if tanggal_awal > tanggal_akhir:
+        raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
+    siswa = db.get(models.Siswa, id_siswa)
+    if not siswa:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+    nama_kelas = siswa.kelas.nama_kelas if siswa.kelas else "-"
+    catatan_list = crud.get_catatan_siswa_range(db, id_siswa, tanggal_awal, tanggal_akhir)
+    catatan_out = [
+        schemas.CatatanRangeOut(
+            id_catatan=c.id_catatan,
+            tanggal=c.tanggal.date() if hasattr(c.tanggal, "date") else c.tanggal,
+            judul=c.judul, isi=c.isi,
+        )
+        for c in catatan_list
+    ]
+    data_siswa = schemas.LaporanCatatanSiswaOut(
+        id_siswa=siswa.id_siswa, nama_siswa=siswa.nama_siswa,
+        jumlah_catatan=len(catatan_out), catatan=catatan_out,
+    )
+    pdf_bytes = _generate_pdf_catatan(data_siswa, nama_kelas, tanggal_awal, tanggal_akhir)
+    nama_file = f"laporan_catatan_{siswa.nama_siswa}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
+    return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{nama_file}"'})
+
+
+# ── /{id_laporan} — HARUS paling bawah di router ini ─────────────────────────
+
+@router_laporan.get("/{id_laporan}", response_model=schemas.LaporanOut, summary="Detail satu laporan")
+def get_laporan_detail(id_laporan: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     lap = crud.get_laporan(db, id_laporan)
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
@@ -1272,15 +1060,8 @@ def get_laporan_detail(
     return crud._build_laporan_out(lap)
 
 
-@router_laporan.delete(
-    "/{id_laporan}",
-    summary="Hapus laporan (guru pemilik atau admin)",
-)
-def hapus_laporan(
-    id_laporan: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+@router_laporan.delete("/{id_laporan}", summary="Hapus laporan (guru pemilik atau admin)")
+def hapus_laporan(id_laporan: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     lap = crud.get_laporan(db, id_laporan)
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
@@ -1294,202 +1075,39 @@ def hapus_laporan(
     return {"message": f"Laporan {id_laporan} berhasil dihapus"}
 
 
-@router_laporan.put(
-    "/{id_laporan}/verifikasi",
-    response_model=schemas.LaporanOut,
-    summary="Admin / Kepala Sekolah memverifikasi laporan",
-)
-def verifikasi_laporan(
-    id_laporan: int,
-    payload: schemas.LaporanVerifikasi,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
+@router_laporan.put("/{id_laporan}/verifikasi", response_model=schemas.LaporanOut, summary="Admin / Kepala Sekolah memverifikasi laporan")
+def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role not in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
-        raise HTTPException(
-            status_code=403,
-            detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan",
-        )
+        raise HTTPException(status_code=403, detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan")
     lap = crud.verifikasi_laporan(db, id_laporan, payload)
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
     return crud._build_laporan_out(lap)
 
 
-# ─── Laporan: Absensi (range tanggal) ────────────────────────────────────────
-
-@router_laporan.get("/absensi", response_model=schemas.LaporanAbsensiKelasOut)
-def get_laporan_absensi(
-    id_kelas: int = Query(..., description="ID kelas"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    """[GURU] Rekap absensi seluruh siswa dalam satu kelas berdasarkan range tanggal."""
-    if tanggal_awal > tanggal_akhir:
-        raise HTTPException(
-            status_code=400,
-            detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir",
-        )
-    result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
-    if not result:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    return result
-
-
-# ─── Laporan: Catatan (range tanggal) ────────────────────────────────────────
-
-@router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut)
-def get_laporan_catatan(
-    id_kelas: int = Query(..., description="ID kelas"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    """[GURU] Daftar catatan harian (target=satu_siswa) semua siswa dalam satu kelas."""
-    if tanggal_awal > tanggal_akhir:
-        raise HTTPException(
-            status_code=400,
-            detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir",
-        )
-    result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
-    if not result:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    return result
-
-
-# ─── Laporan: PDF Absensi ─────────────────────────────────────────────────────
-
-@router_laporan.get("/pdf/absensi")
-def download_pdf_absensi(
-    id_kelas: int = Query(..., description="ID kelas"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    """[GURU] Generate PDF laporan absensi untuk satu kelas."""
-    if tanggal_awal > tanggal_akhir:
-        raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
-    data = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
-    if not data:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-
-    pdf_bytes = _generate_pdf_absensi(data)
-    nama_file = (
-        f"laporan_absensi_{data.nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf"
-        .replace(" ", "_")
-    )
-    return StreamingResponse(
-        BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{nama_file}"'},
-    )
-
-
-# ─── Laporan: PDF Catatan ─────────────────────────────────────────────────────
-
-@router_laporan.get("/pdf/catatan")
-def download_pdf_catatan(
-    id_siswa: int = Query(..., description="ID siswa"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    """[GURU] Generate PDF laporan catatan harian untuk satu siswa."""
-    if tanggal_awal > tanggal_akhir:
-        raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
-
-    siswa = db.get(models.Siswa, id_siswa)
-    if not siswa:
-        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
-
-    nama_kelas = siswa.kelas.nama_kelas if siswa.kelas else "-"
-    catatan_list = crud.get_catatan_siswa_range(db, id_siswa, tanggal_awal, tanggal_akhir)
-
-    catatan_out = [
-        schemas.CatatanRangeOut(
-            id_catatan=c.id_catatan,
-            tanggal=c.tanggal.date() if hasattr(c.tanggal, "date") else c.tanggal,
-            judul=c.judul,
-            isi=c.isi,
-        )
-        for c in catatan_list
-    ]
-
-    data_siswa = schemas.LaporanCatatanSiswaOut(
-        id_siswa=siswa.id_siswa,
-        nama_siswa=siswa.nama_siswa,
-        jumlah_catatan=len(catatan_out),
-        catatan=catatan_out,
-    )
-
-    pdf_bytes = _generate_pdf_catatan(data_siswa, nama_kelas, tanggal_awal, tanggal_akhir)
-    nama_file = (
-        f"laporan_catatan_{siswa.nama_siswa}_{tanggal_awal}_{tanggal_akhir}.pdf"
-        .replace(" ", "_")
-    )
-    return StreamingResponse(
-        BytesIO(pdf_bytes),
-        media_type="application/pdf",
-        headers={"Content-Disposition": f'attachment; filename="{nama_file}"'},
-    )
-
-
 # ─── PDF Generator: Absensi ───────────────────────────────────────────────────
 
 def _generate_pdf_absensi(data: schemas.LaporanAbsensiKelasOut) -> bytes:
     buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-        leftMargin=2 * cm,  rightMargin=2 * cm,
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
+                            topMargin=1.5*cm, bottomMargin=1.5*cm, leftMargin=2*cm, rightMargin=2*cm)
     styles = getSampleStyleSheet()
     elements = []
-
-    style_judul = ParagraphStyle(
-        "Judul", parent=styles["Heading1"],
-        alignment=TA_CENTER, fontSize=14, spaceAfter=4,
-    )
-    style_sub = ParagraphStyle(
-        "Sub", parent=styles["Normal"],
-        alignment=TA_CENTER, fontSize=10, spaceAfter=2,
-    )
-
+    style_judul = ParagraphStyle("Judul", parent=styles["Heading1"], alignment=TA_CENTER, fontSize=14, spaceAfter=4)
+    style_sub   = ParagraphStyle("Sub",   parent=styles["Normal"],   alignment=TA_CENTER, fontSize=10, spaceAfter=2)
     elements.append(Paragraph("LAPORAN ABSENSI SISWA", style_judul))
     elements.append(Paragraph("TK Qoulan Sadid", style_sub))
     elements.append(Paragraph(f"Kelas: {data.nama_kelas}", style_sub))
-    elements.append(Paragraph(
-        f"Periode: {data.tanggal_awal.strftime('%d-%m-%Y')} s/d {data.tanggal_akhir.strftime('%d-%m-%Y')}",
-        style_sub,
-    ))
-    elements.append(Spacer(1, 0.4 * cm))
+    elements.append(Paragraph(f"Periode: {data.tanggal_awal.strftime('%d-%m-%Y')} s/d {data.tanggal_akhir.strftime('%d-%m-%Y')}", style_sub))
+    elements.append(Spacer(1, 0.4*cm))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#2d6a4f")))
-    elements.append(Spacer(1, 0.4 * cm))
-
+    elements.append(Spacer(1, 0.4*cm))
     header = ["No", "Nama Siswa", "Hadir", "Sakit", "Izin", "Alpha", "Total Hari"]
     table_data = [header]
-
     for i, siswa in enumerate(data.siswa, start=1):
-        table_data.append([
-            str(i), siswa.nama_siswa,
-            str(siswa.hadir), str(siswa.sakit),
-            str(siswa.izin),  str(siswa.alpha),
-            str(siswa.total_hari),
-        ])
-
-    table_data.append([
-        "", "TOTAL KELAS",
-        str(data.total_hadir), str(data.total_sakit),
-        str(data.total_izin),  str(data.total_alpha),
-        str(data.total_hadir + data.total_sakit + data.total_izin + data.total_alpha),
-    ])
-
+        table_data.append([str(i), siswa.nama_siswa, str(siswa.hadir), str(siswa.sakit), str(siswa.izin), str(siswa.alpha), str(siswa.total_hari)])
+    table_data.append(["", "TOTAL KELAS", str(data.total_hadir), str(data.total_sakit), str(data.total_izin), str(data.total_alpha),
+                        str(data.total_hadir + data.total_sakit + data.total_izin + data.total_alpha)])
     col_widths = [1.2*cm, 9*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2.5*cm, 3*cm]
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(TableStyle([
@@ -1510,29 +1128,20 @@ def _generate_pdf_absensi(data: schemas.LaporanAbsensiKelasOut) -> bytes:
         ("FONTNAME",       (0, -1), (-1, -1), "Helvetica-Bold"),
         ("FONTSIZE",       (0, -1), (-1, -1), 9),
         ("GRID",           (0, 0),  (-1, -1), 0.5, colors.HexColor("#b7d4c8")),
-        ("ROWHEIGHT",      (0, 0),  (-1, -1), 0.7 * cm),
+        ("ROWHEIGHT",      (0, 0),  (-1, -1), 0.7*cm),
         ("TOPPADDING",     (0, 0),  (-1, -1), 4),
         ("BOTTOMPADDING",  (0, 0),  (-1, -1), 4),
         ("LEFTPADDING",    (0, 0),  (-1, -1), 6),
         ("RIGHTPADDING",   (0, 0),  (-1, -1), 6),
     ]))
-
     elements.append(tbl)
-    elements.append(Spacer(1, 0.5 * cm))
-
-    style_note = ParagraphStyle(
-        "Note", parent=styles["Normal"], fontSize=9,
-        textColor=colors.HexColor("#555555"),
-    )
+    elements.append(Spacer(1, 0.5*cm))
+    style_note = ParagraphStyle("Note", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#555555"))
     elements.append(Paragraph(
-        f"Total Siswa: <b>{data.total_siswa}</b>  |  "
-        f"Total Hadir: <b>{data.total_hadir}</b>  |  "
-        f"Total Sakit: <b>{data.total_sakit}</b>  |  "
-        f"Total Izin: <b>{data.total_izin}</b>  |  "
-        f"Total Alpha: <b>{data.total_alpha}</b>",
+        f"Total Siswa: <b>{data.total_siswa}</b>  |  Total Hadir: <b>{data.total_hadir}</b>  |  "
+        f"Total Sakit: <b>{data.total_sakit}</b>  |  Total Izin: <b>{data.total_izin}</b>  |  Total Alpha: <b>{data.total_alpha}</b>",
         style_note,
     ))
-
     doc.build(elements)
     buffer.seek(0)
     return buffer.read()
@@ -1540,61 +1149,30 @@ def _generate_pdf_absensi(data: schemas.LaporanAbsensiKelasOut) -> bytes:
 
 # ─── PDF Generator: Catatan Harian ───────────────────────────────────────────
 
-def _generate_pdf_catatan(
-    data: schemas.LaporanCatatanSiswaOut,
-    nama_kelas: str,
-    tanggal_awal: date,
-    tanggal_akhir: date,
-) -> bytes:
+def _generate_pdf_catatan(data: schemas.LaporanCatatanSiswaOut, nama_kelas: str, tanggal_awal: date, tanggal_akhir: date) -> bytes:
     buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer, pagesize=A4,
-        topMargin=1.5 * cm, bottomMargin=1.5 * cm,
-        leftMargin=2 * cm,  rightMargin=2 * cm,
-    )
+    doc = SimpleDocTemplate(buffer, pagesize=A4,
+                            topMargin=1.5*cm, bottomMargin=1.5*cm, leftMargin=2*cm, rightMargin=2*cm)
     styles = getSampleStyleSheet()
     elements = []
-
-    style_judul = ParagraphStyle(
-        "Judul", parent=styles["Heading1"],
-        alignment=TA_CENTER, fontSize=13, spaceAfter=4,
-    )
-    style_sub = ParagraphStyle(
-        "Sub", parent=styles["Normal"],
-        alignment=TA_CENTER, fontSize=10, spaceAfter=2,
-    )
-    style_info = ParagraphStyle(
-        "Info", parent=styles["Normal"],
-        fontSize=10, spaceAfter=2, leftIndent=20,
-    )
-
+    style_judul = ParagraphStyle("Judul", parent=styles["Heading1"], alignment=TA_CENTER, fontSize=13, spaceAfter=4)
+    style_sub   = ParagraphStyle("Sub",   parent=styles["Normal"],   alignment=TA_CENTER, fontSize=10, spaceAfter=2)
+    style_info  = ParagraphStyle("Info",  parent=styles["Normal"],   fontSize=10, spaceAfter=2, leftIndent=20)
     elements.append(Paragraph("LAPORAN CATATAN HARIAN SISWA", style_judul))
     elements.append(Paragraph("TK Qoulan Sadid", style_sub))
-    elements.append(Spacer(1, 0.3 * cm))
+    elements.append(Spacer(1, 0.3*cm))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#2d6a4f")))
-    elements.append(Spacer(1, 0.3 * cm))
-
+    elements.append(Spacer(1, 0.3*cm))
     elements.append(Paragraph(f"Nama Siswa : <b>{data.nama_siswa}</b>", style_info))
     elements.append(Paragraph(f"Kelas      : <b>{nama_kelas}</b>", style_info))
-    elements.append(Paragraph(
-        f"Periode    : <b>{tanggal_awal.strftime('%d-%m-%Y')} s/d {tanggal_akhir.strftime('%d-%m-%Y')}</b>",
-        style_info,
-    ))
-    elements.append(Spacer(1, 0.4 * cm))
-
+    elements.append(Paragraph(f"Periode    : <b>{tanggal_awal.strftime('%d-%m-%Y')} s/d {tanggal_akhir.strftime('%d-%m-%Y')}</b>", style_info))
+    elements.append(Spacer(1, 0.4*cm))
     if not data.catatan:
-        style_empty = ParagraphStyle(
-            "Empty", parent=styles["Normal"],
-            alignment=TA_CENTER, fontSize=10,
-            textColor=colors.HexColor("#999999"),
-        )
+        style_empty = ParagraphStyle("Empty", parent=styles["Normal"], alignment=TA_CENTER, fontSize=10, textColor=colors.HexColor("#999999"))
         elements.append(Paragraph("Tidak ada catatan harian dalam periode ini.", style_empty))
     else:
         style_cell = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=8, leading=11)
-
-        header = ["No", "Tanggal", "Judul", "Catatan", "Saran"]
-        table_data = [header]
-
+        table_data = [["No", "Tanggal", "Judul", "Catatan", "Saran"]]
         for i, catatan in enumerate(data.catatan, start=1):
             table_data.append([
                 str(i),
@@ -1603,7 +1181,6 @@ def _generate_pdf_catatan(
                 Paragraph(catatan.isi or "-", style_cell),
                 "",
             ])
-
         col_widths = [0.8*cm, 2.2*cm, 3*cm, 7*cm, 3*cm]
         tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
         tbl.setStyle(TableStyle([
@@ -1625,23 +1202,11 @@ def _generate_pdf_catatan(
             ("LEFTPADDING",    (0, 0),  (-1, -1), 5),
             ("RIGHTPADDING",   (0, 0),  (-1, -1), 5),
         ]))
-
         elements.append(tbl)
-        elements.append(Spacer(1, 0.4 * cm))
-
-        style_note = ParagraphStyle(
-            "Note", parent=styles["Normal"], fontSize=8,
-            textColor=colors.HexColor("#777777"),
-        )
-        elements.append(Paragraph(
-            "* Kolom Saran dikosongkan dan dapat diisi secara manual setelah dicetak.",
-            style_note,
-        ))
-        elements.append(Paragraph(
-            f"* Total catatan: {data.jumlah_catatan} catatan",
-            style_note,
-        ))
-
+        elements.append(Spacer(1, 0.4*cm))
+        style_note = ParagraphStyle("Note", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#777777"))
+        elements.append(Paragraph("* Kolom Saran dikosongkan dan dapat diisi secara manual setelah dicetak.", style_note))
+        elements.append(Paragraph(f"* Total catatan: {data.jumlah_catatan} catatan", style_note))
     doc.build(elements)
     buffer.seek(0)
     return buffer.read()
@@ -1663,7 +1228,6 @@ async def websocket_endpoint(websocket: WebSocket, id_akun: int, token: str):
     except jwt.PyJWTError:
         await websocket.close(code=4001)
         return
-
     await ws_manager.connect(id_akun, websocket)
     try:
         while True:

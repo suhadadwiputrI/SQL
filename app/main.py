@@ -1192,13 +1192,12 @@ def _generate_pdf_absensi(data: schemas.LaporanAbsensiKelasOut) -> bytes:
     elements.append(Spacer(1, 0.4*cm))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#2d6a4f")))
     elements.append(Spacer(1, 0.4*cm))
-    header = ["No", "Nama Siswa", "Hadir", "Sakit", "Izin", "Alpha", "Total Hari"]
+    header = ["No", "Nama Siswa", "Hadir", "Sakit", "Izin", "Alpha"]
     table_data = [header]
     for i, siswa in enumerate(data.siswa, start=1):
-        table_data.append([str(i), siswa.nama_siswa, str(siswa.hadir), str(siswa.sakit), str(siswa.izin), str(siswa.alpha), str(siswa.total_hari)])
-    table_data.append(["", "TOTAL KELAS", str(data.total_hadir), str(data.total_sakit), str(data.total_izin), str(data.total_alpha),
-                        str(data.total_hadir + data.total_sakit + data.total_izin + data.total_alpha)])
-    col_widths = [1.2*cm, 9*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2.5*cm, 3*cm]
+        table_data.append([str(i), siswa.nama_siswa, str(siswa.hadir), str(siswa.sakit), str(siswa.izin), str(siswa.alpha)])
+    table_data.append(["", "TOTAL KELAS", str(data.total_hadir), str(data.total_sakit), str(data.total_izin), str(data.total_alpha)])
+    col_widths = [1.2*cm, 11*cm, 2.5*cm, 2.5*cm, 2.5*cm, 2.5*cm]
     tbl = Table(table_data, colWidths=col_widths, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",     (0, 0),  (-1, 0),  colors.HexColor("#2d6a4f")),

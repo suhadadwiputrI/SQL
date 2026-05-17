@@ -591,3 +591,62 @@ class LaporanKelasOut(BaseModel):
 # Hindari circular import — forward ref sudah tersedia dari schemas.py
 # Pastikan CatatanHarianOut sudah diimport sebelum blok ini
 LaporanSiswaOut.model_rebuild()    
+
+class LaporanCreate(BaseModel):
+    """
+    Request body  POST /laporan/
+    id_guru diambil otomatis dari JWT — tidak perlu dikirim.
+    id_siswa selalu wajib (sesuai LaporanResponse.java Android: idSiswa = int).
+    id_kelas diambil otomatis dari data siswa di backend.
+    """
+    id_siswa:       int           = Field(..., example=5)
+    periode:        str           = Field(..., max_length=50, example="Semester 1 2024")
+    tanggal_dibuat: date          = Field(..., example="2025-05-17")
+    keterangan:     Optional[str] = Field(None, max_length=255)
+ 
+ 
+class LaporanVerifikasi(BaseModel):
+    """Request body  PUT /laporan/{id_laporan}/verifikasi"""
+    status:     bool            = Field(..., example=True,
+                                       description="true = selesai/terverifikasi")
+    keterangan: Optional[str]   = Field(None, max_length=255,
+                                       description="Catatan dari admin/kepsek")
+ 
+ 
+class LaporanOut(BaseModel):
+    """
+    Response satu laporan manual guru.
+    Disesuaikan 1-1 dengan LaporanResponse.java Android:
+      - id_siswa   int    (bukan Optional)
+      - id_guru    Integer nullable
+      - created_at datetime nullable
+      - nama_siswa / nama_kelas / nama_guru dari JOIN
+    """
+    id_laporan:     int
+    id_siswa:       int                        # selalu ada
+    id_guru:        Optional[int]   = None     # nullable sesuai Android
+    periode:        str
+    tanggal_dibuat: date
+    status:         bool            = False    # false=belum, true=selesai
+    keterangan:     Optional[str]   = None
+    created_at:     Optional[datetime] = None  # kolom audit dari DB
+ 
+    # Hasil JOIN — opsional, backend isi jika tersedia
+    nama_siswa:     Optional[str]   = None
+    nama_kelas:     Optional[str]   = None
+    nama_guru:      Optional[str]   = None
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+class LaporanListResponse(BaseModel):
+    """
+    Wrapper list laporan.
+    Disesuaikan 1-1 dengan LaporanListResponse.java Android:
+      - total, total_selesai, total_belum, data
+    """
+    total:         int
+    total_selesai: int              = 0
+    total_belum:   int              = 0
+    data:          List[LaporanOut]

@@ -678,3 +678,100 @@ def get_laporan_otomatis_kelas(
         total_alpha=total_alpha,
         siswa=detail_siswa,
     )
+    
+# ─── Tambahkan ke crud.py — di bagian bawah file ─────────────────────────────
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ─── Laporan Manual Guru ──────────────────────────────────────────────────────
+
+def get_laporan(db: Session, id_laporan: int) -> Optional[models.Laporan]:
+    return db.get(models.Laporan, id_laporan)
+
+
+def get_laporan_by_guru(
+    db: Session,
+    id_guru: int,
+    skip: int = 0,
+    limit: int = 50,
+) -> List[models.Laporan]:
+    return (
+        db.query(models.Laporan)
+        .filter(models.Laporan.id_guru == id_guru)
+        .order_by(models.Laporan.tanggal_dibuat.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
+def create_laporan(
+    db: Session,
+    data: schemas.LaporanCreate,
+    id_guru: int,
+) -> models.Laporan:
+    obj = models.Laporan(
+        id_siswa       = data.id_siswa,
+        id_guru        = id_guru,
+        periode        = data.periode,
+        tanggal_dibuat = data.tanggal_dibuat,
+        keterangan     = data.keterangan,
+        status         = False,
+    )
+    db.add(obj)
+    return _commit_refresh(db, obj)
+
+
+def verifikasi_laporan(
+    db: Session,
+    id_laporan: int,
+    data: schemas.LaporanVerifikasi,
+) -> Optional[models.Laporan]:
+    obj = get_laporan(db, id_laporan)
+    if not obj:
+        return None
+    obj.status     = data.status
+    obj.keterangan = data.keterangan
+    return _commit_refresh(db, obj)
+
+
+def delete_laporan(db: Session, id_laporan: int) -> bool:
+    obj = get_laporan(db, id_laporan)
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
+
+
+def _build_laporan_out(lap: models.Laporan) -> schemas.LaporanOut:
+    """
+    Bangun LaporanOut dari ORM object.
+    nama_kelas diambil dari siswa.kelas (bukan kolom langsung di tabel laporan).
+    """
+    nama_kelas = None
+    if lap.siswa and lap.siswa.kelas:
+        nama_kelas = lap.siswa.kelas.nama_kelas
+
+    return schemas.LaporanOut(
+        id_laporan     = lap.id_laporan,
+        id_siswa       = lap.id_siswa,
+        id_guru        = lap.id_guru,
+        periode        = lap.periode,
+        tanggal_dibuat = lap.tanggal_dibuat,
+        status         = lap.status,
+        keterangan     = lap.keterangan,
+        created_at     = lap.created_at,
+        nama_siswa     = lap.siswa.nama_siswa if lap.siswa else None,
+        nama_kelas     = nama_kelas,
+        nama_guru      = lap.guru.akun.nama if lap.guru and lap.guru.akun else None,
+    )
+
+
+def _hitung_statistik_laporan(data: list) -> dict:
+    """Helper: hitung total_selesai dan total_belum dari list Laporan."""
+    total_selesai = sum(1 for l in data if l.status)
+    return {
+        "total":         len(data),
+        "total_selesai": total_selesai,
+        "total_belum":   len(data) - total_selesai,
+    }    

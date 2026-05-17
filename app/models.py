@@ -1,6 +1,6 @@
 from sqlalchemy import (
     Boolean, Column, ForeignKey, Integer, String,
-    Enum, TIMESTAMP, Date, Text
+    Enum, TIMESTAMP, Date, DateTime, Text
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -42,13 +42,13 @@ class Akun(Base):
     device_id   = Column(String(64), nullable=True)
     created_at  = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at  = Column(TIMESTAMP, onupdate=func.now(), nullable=True)
+
     reset_password = relationship("ResetPassword", back_populates="akun", cascade="all, delete-orphan")
     guru           = relationship("Guru",          back_populates="akun", uselist=False, cascade="all, delete-orphan")
     admin          = relationship("Admin",         back_populates="akun", uselist=False, cascade="all, delete-orphan")
     kepala_sekolah = relationship("KepalaSekolah", back_populates="akun", uselist=False, cascade="all, delete-orphan")
     wali_siswa     = relationship("WaliSiswa",     back_populates="akun", uselist=False, cascade="all, delete-orphan")
 
-    # Pesan yang dikirim / diterima oleh akun ini
     pesan_terkirim = relationship("Pesan", foreign_keys="[Pesan.id_pengirim]",
                                   back_populates="pengirim", cascade="all, delete-orphan")
     pesan_diterima = relationship("Pesan", foreign_keys="[Pesan.id_penerima]",
@@ -87,8 +87,11 @@ class Guru(Base):
     id_kelas = Column(String(50), nullable=True)   # JSON string "[1,2]"
     nip      = Column(String(20), unique=True, nullable=True)
 
-    akun = relationship("Akun", back_populates="guru")
-  
+    akun    = relationship("Akun", back_populates="guru")
+    # BUG DIPERBAIKI: back_populates="laporan" ditambahkan agar relasi Laporan tidak error
+    laporan = relationship("Laporan", back_populates="guru", cascade="all, delete-orphan")
+
+
 # ─── Admin ────────────────────────────────────────────────────────────────────
 
 class Admin(Base):
@@ -152,7 +155,6 @@ class WaliSiswa(Base):
 # ─── Pesan ────────────────────────────────────────────────────────────────────
 
 class Pesan(Base):
-
     __tablename__ = "pesan"
 
     id_pesan    = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
@@ -167,9 +169,9 @@ class Pesan(Base):
 
     pengirim = relationship("Akun", foreign_keys=[id_pengirim], back_populates="pesan_terkirim")
     penerima = relationship("Akun", foreign_keys=[id_penerima], back_populates="pesan_diterima")
-    
-    
-# ── Tambahkan ke models.py (setelah class Pesan) ──────────────────────────────
+
+
+# ─── Absensi ──────────────────────────────────────────────────────────────────
 
 class StatusAbsensiEnum(str, enum.Enum):
     hadir = "hadir"
@@ -179,57 +181,51 @@ class StatusAbsensiEnum(str, enum.Enum):
 
 
 class Absensi(Base):
-    """
-    Tabel absensi harian siswa.
-    id_guru merujuk ke guru.id_guru (bukan id_akun).
-    Kombinasi (id_siswa, tanggal) harus unik — satu siswa satu record per hari.
-    """
     __tablename__ = "absensi"
 
-    id_absensi  = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_siswa    = Column(INTEGER(13), ForeignKey("siswa.id_siswa",  ondelete="CASCADE"), nullable=False, index=True)
-    id_guru     = Column(INTEGER(13), ForeignKey("guru.id_guru",    ondelete="SET NULL"), nullable=True,  index=True)
-    tanggal     = Column(Date, nullable=False, index=True)
-    status      = Column(Enum(StatusAbsensiEnum), nullable=False, default=StatusAbsensiEnum.hadir)
-    keterangan  = Column(String(100), nullable=True)
+    id_absensi = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
+    id_siswa   = Column(INTEGER(13), ForeignKey("siswa.id_siswa",  ondelete="CASCADE"),  nullable=False, index=True)
+    id_guru    = Column(INTEGER(13), ForeignKey("guru.id_guru",    ondelete="SET NULL"), nullable=True,  index=True)
+    tanggal    = Column(Date, nullable=False, index=True)
+    status     = Column(Enum(StatusAbsensiEnum), nullable=False, default=StatusAbsensiEnum.hadir)
+    keterangan = Column(String(100), nullable=True)
 
     siswa = relationship("Siswa", foreign_keys=[id_siswa])
-    guru  = relationship("Guru",  foreign_keys=[id_guru])    
-    
-# ──────────────────────────────────────────────────────────────────────────────
-# TAMBAHKAN KE models.py — setelah class Absensi
-# ──────────────────────────────────────────────────────────────────────────────
+    guru  = relationship("Guru",  foreign_keys=[id_guru])
+
+
+# ─── Catatan Harian ───────────────────────────────────────────────────────────
 
 class TargetCatatanEnum(str, enum.Enum):
-    semua_kelas  = "semua_kelas"   # broadcast ke SEMUA siswa (TK A + TK B)
-    satu_kelas   = "satu_kelas"    # hanya siswa di 1 kelas tertentu
-    satu_siswa   = "satu_siswa"    # hanya 1 siswa tertentu
+    semua_kelas = "semua_kelas"
+    satu_kelas  = "satu_kelas"
+    satu_siswa  = "satu_siswa"
 
 
 class CatatanHarian(Base):
     __tablename__ = "catatan_harian"
 
     id_catatan = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_guru    = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True, index=True)
-    id_siswa   = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=True, index=True)
-    id_kelas   = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True, index=True)
+    id_guru    = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
+    id_siswa   = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=True,  index=True)
+    id_kelas   = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True,  index=True)
     target     = Column(Enum(TargetCatatanEnum), nullable=False, default=TargetCatatanEnum.satu_siswa)
-    judul      = Column(String(50),  nullable=False)
-    foto       = Column(String(50),  nullable=True)
-    isi        = Column(Text,        nullable=False)
-    tanggal    = Column(TIMESTAMP,   server_default=func.now(), nullable=False, index=True)
+    judul      = Column(String(50), nullable=False)
+    foto       = Column(String(50), nullable=True)
+    isi        = Column(Text, nullable=False)
+    tanggal    = Column(TIMESTAMP, server_default=func.now(), nullable=False, index=True)
 
     guru  = relationship("Guru",  foreign_keys=[id_guru])
     siswa = relationship("Siswa", foreign_keys=[id_siswa])
     kelas = relationship("Kelas", foreign_keys=[id_kelas])
-    
-# ─── TAMBAHKAN KE models.py (setelah class CatatanHarian) ────────────────────
 
+
+# ─── Notifikasi ───────────────────────────────────────────────────────────────
 
 class TipeNotifEnum(str, enum.Enum):
-    pesan     = "pesan"       # ada pesan masuk baru
-    absensi   = "absensi"     # absensi baru diinput guru
-    catatan   = "catatan"     # catatan harian baru dibuat guru
+    pesan   = "pesan"
+    absensi = "absensi"
+    catatan = "catatan"
 
 
 class StatusNotifEnum(str, enum.Enum):
@@ -241,30 +237,40 @@ class Notifikasi(Base):
     __tablename__ = "notifikasi"
 
     id_notif = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun  = Column(INTEGER(13), ForeignKey("akun.id_akun", ondelete="CASCADE"),
-                    nullable=False, index=True)
+    id_akun  = Column(INTEGER(13), ForeignKey("akun.id_akun", ondelete="CASCADE"), nullable=False, index=True)
     judul    = Column(String(50),  nullable=False)
     pesan    = Column(String(100), nullable=False)
     tipe     = Column(Enum(TipeNotifEnum),   nullable=False)
-    ref_id   = Column(INTEGER(13), nullable=True)   # id_pesan / id_absensi / id_catatan
+    ref_id   = Column(INTEGER(13), nullable=True)
     tanggal  = Column(TIMESTAMP,  server_default=func.now(), nullable=False, index=True)
-    status   = Column(Enum(StatusNotifEnum),
-                      default=StatusNotifEnum.belum_dibaca, nullable=False)
+    status   = Column(Enum(StatusNotifEnum), default=StatusNotifEnum.belum_dibaca, nullable=False)
 
-    akun = relationship("Akun", foreign_keys=[id_akun])    
-    
-    
+    akun = relationship("Akun", foreign_keys=[id_akun])
+
+
+# ─── Laporan Manual Guru ──────────────────────────────────────────────────────
+
 class Laporan(Base):
+    """
+    Tabel laporan manual yang dibuat guru.
+    Setiap laporan untuk satu siswa (id_siswa NOT NULL).
+    nama_kelas diambil lewat relasi siswa → kelas, tidak disimpan sebagai kolom.
+    """
     __tablename__ = "laporan"
 
+    # BUG DIPERBAIKI: Column diimport dari sqlalchemy, bukan Integer bawaan
+    # BUG DIPERBAIKI: DateTime diimport di atas — sebelumnya tidak ada di import
     id_laporan     = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_siswa       = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"), nullable=False, index=True)
+    id_siswa       = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=False, index=True)
     id_guru        = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
-    periode        = Column(String(20),  nullable=False)
+    periode        = Column(String(50),  nullable=False)
     tanggal_dibuat = Column(Date,        nullable=False)
     status         = Column(Boolean,     default=False, nullable=False)
-    keterangan     = Column(String(100), nullable=True)
+    keterangan     = Column(String(255), nullable=True)
+    # BUG DIPERBAIKI: TIMESTAMP konsisten dengan kolom lain; DateTime dihapus
+    # (DateTime tanpa timezone tidak punya server_default di MySQL, pakai TIMESTAMP)
     created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
 
     siswa = relationship("Siswa", foreign_keys=[id_siswa])
-    guru  = relationship("Guru",  foreign_keys=[id_guru])
+    # BUG DIPERBAIKI: back_populates="laporan" cocok dengan Guru.laporan di atas
+    guru  = relationship("Guru",  foreign_keys=[id_guru], back_populates="laporan")

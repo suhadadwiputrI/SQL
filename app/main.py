@@ -989,7 +989,120 @@ def laporan_otomatis_kelas(
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     return laporan
 
-
+@router_laporan.post(
+    "/",
+    response_model=schemas.LaporanOut,
+    status_code=201,
+    summary="Guru membuat laporan baru untuk satu siswa",
+)
+def buat_laporan(
+    payload: schemas.LaporanCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat laporan")
+ 
+    guru = _get_guru_or_403(db, current_user.id_akun)
+ 
+    if not crud.get_siswa(db, payload.id_siswa):
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+ 
+    lap = crud.create_laporan(db, payload, guru.id_guru)
+    return crud._build_laporan_out(lap)
+ 
+ 
+@router_laporan.get(
+    "/guru/",
+    response_model=schemas.LaporanListResponse,
+    summary="Daftar laporan milik guru yang sedang login",
+)
+def list_laporan_guru(
+    skip:  int = 0,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
+ 
+    guru = _get_guru_or_403(db, current_user.id_akun)
+    data = crud.get_laporan_by_guru(db, guru.id_guru, skip, limit)
+    stat = crud._hitung_statistik_laporan(data)
+ 
+    return schemas.LaporanListResponse(
+        **stat,
+        data=[crud._build_laporan_out(l) for l in data],
+    )
+ 
+ 
+@router_laporan.get(
+    "/{id_laporan}",
+    response_model=schemas.LaporanOut,
+    summary="Detail satu laporan",
+)
+def get_laporan_detail(
+    id_laporan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    lap = crud.get_laporan(db, id_laporan)
+    if not lap:
+        raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
+ 
+    # Guru hanya boleh lihat miliknya; admin / kepsek boleh semua
+    if current_user.role == models.RoleEnum.guru:
+        guru = _get_guru_or_403(db, current_user.id_akun)
+        if lap.id_guru != guru.id_guru:
+            raise HTTPException(status_code=403, detail="Akses ditolak")
+ 
+    return crud._build_laporan_out(lap)
+ 
+ 
+@router_laporan.delete(
+    "/{id_laporan}",
+    summary="Hapus laporan (guru pemilik atau admin)",
+)
+def hapus_laporan(
+    id_laporan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    lap = crud.get_laporan(db, id_laporan)
+    if not lap:
+        raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
+ 
+    if current_user.role == models.RoleEnum.guru:
+        guru = _get_guru_or_403(db, current_user.id_akun)
+        if lap.id_guru != guru.id_guru:
+            raise HTTPException(status_code=403, detail="Anda bukan pembuat laporan ini")
+    elif current_user.role != models.RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+ 
+    crud.delete_laporan(db, id_laporan)
+    return {"message": f"Laporan {id_laporan} berhasil dihapus"}
+ 
+ 
+@router_laporan.put(
+    "/{id_laporan}/verifikasi",
+    response_model=schemas.LaporanOut,
+    summary="Admin / Kepala Sekolah memverifikasi laporan",
+)
+def verifikasi_laporan(
+    id_laporan: int,
+    payload: schemas.LaporanVerifikasi,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role not in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan",
+        )
+    lap = crud.verifikasi_laporan(db, id_laporan, payload)
+    if not lap:
+        raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
+    return crud._build_laporan_out(lap)
 # ─── Daftarkan router laporan ─────────────────────────────────────────────────
 app.include_router(router_laporan)
 

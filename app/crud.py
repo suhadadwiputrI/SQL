@@ -736,6 +736,7 @@ def create_laporan(
         id_guru        = id_guru,
         periode        = data.periode,
         tanggal_dibuat = data.tanggal_dibuat,
+        jenis_laporan  = data.jenis_laporan,
         keterangan     = data.keterangan,
         status         = models.StatusLaporanEnum.menunggu_verifikasi,
     )
@@ -783,6 +784,7 @@ def _build_laporan_out(lap: models.Laporan) -> schemas.LaporanOut:
         id_guru        = lap.id_guru,
         periode        = lap.periode,
         tanggal_dibuat = lap.tanggal_dibuat,
+        jenis_laporan  = lap.jenis_laporan, 
         status         = lap.status,
         keterangan     = lap.keterangan,
         created_at     = lap.created_at,

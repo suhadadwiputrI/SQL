@@ -618,6 +618,7 @@ class LaporanCreate(BaseModel):
     id_kelas:       int           = Field(..., example=1, description="ID kelas yang dilaporkan")
     periode:        str           = Field(..., max_length=20, example="Mei 2025")
     tanggal_dibuat: date          = Field(..., example="2025-05-17")
+    jenis_laporan : str = "absensi"
     keterangan:     Optional[str] = Field(None, max_length=100, description="Catatan dari guru")
 
 
@@ -655,6 +656,7 @@ class LaporanOut(BaseModel):
     id_guru:        Optional[int]          = None
     periode:        str
     tanggal_dibuat: date
+    jenis_laporan : str   
     status:         StatusLaporanEnum      = StatusLaporanEnum.menunggu_verifikasi
     keterangan:     Optional[str]          = None
     created_at:     Optional[datetime]     = None   # audit — kapan laporan pertama dibuat

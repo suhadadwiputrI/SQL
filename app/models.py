@@ -255,21 +255,22 @@ class StatusLaporanEnum(str, enum.Enum):
     terverifikasi       = "terverifikasi"
 
 
+class JenisLaporanEnum(str, enum.Enum):
+    absensi = "absensi"
+    catatan = "catatan"
+
 class Laporan(Base):
     __tablename__ = "laporan"
 
     id_laporan     = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_kelas       = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True,  index=True)
-    id_guru        = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
-    periode        = Column(String(20),  nullable=False)          
-    tanggal_dibuat = Column(Date,        nullable=False)          
-    status         = Column(
-                        Enum(StatusLaporanEnum),
-                        default=StatusLaporanEnum.menunggu_verifikasi,
-                        nullable=False,
-                    )
-    keterangan     = Column(String(100), nullable=True)         
-    created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)  
+    id_kelas       = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True, index=True)
+    id_guru        = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True, index=True)
+    periode        = Column(String(20),  nullable=False)
+    tanggal_dibuat = Column(Date,        nullable=False)
+    jenis_laporan  = Column(Enum(JenisLaporanEnum), nullable=False, default=JenisLaporanEnum.absensi)  # ✅
+    status         = Column(Enum(StatusLaporanEnum), default=StatusLaporanEnum.menunggu_verifikasi, nullable=False)
+    keterangan     = Column(String(100), nullable=True)
+    created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
 
     kelas = relationship("Kelas", foreign_keys=[id_kelas])
     guru  = relationship("Guru",  foreign_keys=[id_guru], back_populates="laporan")

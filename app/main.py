@@ -806,7 +806,7 @@ def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int, db: Session = Depen
     ]
 
 
-@app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiOut, tags=["Absensi"])
+@app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiSiswaOut, tags=["Absensi"])
 def get_ringkasan_absensi(id_siswa: int, bulan: int, tahun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     _cek_wali_akses_siswa(db, current_user, id_siswa)
     records = db.query(models.Absensi).filter(

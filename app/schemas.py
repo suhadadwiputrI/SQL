@@ -650,3 +650,95 @@ class LaporanListResponse(BaseModel):
     total_selesai: int              = 0
     total_belum:   int              = 0
     data:          List[LaporanOut]
+    
+# ─── Rekap Absensi Siswa (range tanggal) ──────────────────────────────────────
+ 
+class RingkasanAbsensiSiswaRangeOut(BaseModel):
+    """
+    Rekap absensi satu siswa dalam range tanggal.
+    Dipakai dalam LaporanAbsensiKelasOut (list per kelas).
+    """
+    id_siswa:   int
+    nama_siswa: str
+    hadir:      int = 0
+    sakit:      int = 0
+    izin:       int = 0
+    alpha:      int = 0
+    total_hari: int = 0
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+# ─── Laporan Absensi Kelas (range tanggal) ────────────────────────────────────
+ 
+class LaporanAbsensiKelasOut(BaseModel):
+    """
+    Response GET /laporan/absensi?id_kelas=&tanggal_awal=&tanggal_akhir=
+    Rekap absensi semua siswa dalam satu kelas berdasarkan range tanggal.
+    """
+    id_kelas:      int
+    nama_kelas:    str
+    tanggal_awal:  date
+    tanggal_akhir: date
+ 
+    # Agregat kelas
+    total_siswa: int = 0
+    total_hadir: int = 0
+    total_sakit: int = 0
+    total_izin:  int = 0
+    total_alpha: int = 0
+ 
+    # Detail per siswa
+    siswa: List[RingkasanAbsensiSiswaRangeOut] = []
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+# ─── Catatan Per Siswa (range tanggal) ────────────────────────────────────────
+ 
+class CatatanRangeOut(BaseModel):
+    """
+    Satu item catatan harian dalam rentang tanggal laporan.
+    """
+    id_catatan: int
+    tanggal:    date
+    judul:      str
+    isi:        str
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+class LaporanCatatanSiswaOut(BaseModel):
+    """
+    Data catatan satu siswa dalam laporan kelas (range tanggal).
+    """
+    id_siswa:       int
+    nama_siswa:     str
+    jumlah_catatan: int = 0
+    catatan:        List[CatatanRangeOut] = []
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+# ─── Laporan Catatan Kelas (range tanggal) ────────────────────────────────────
+ 
+class LaporanCatatanKelasOut(BaseModel):
+    """
+    Response GET /laporan/catatan?id_kelas=&tanggal_awal=&tanggal_akhir=
+    Daftar catatan harian (target=satu_siswa) untuk semua siswa dalam satu kelas.
+    """
+    id_kelas:      int
+    nama_kelas:    str
+    tanggal_awal:  date
+    tanggal_akhir: date
+    total_siswa:   int = 0
+ 
+    # Detail catatan per siswa
+    siswa: List[LaporanCatatanSiswaOut] = []
+ 
+    class Config:
+        from_attributes = True    

@@ -255,9 +255,7 @@ class PesanOut(BaseModel):
     id_penerima: int
     isi_pesan:   str
     waktu:       datetime
-    status:      StatusPesanEnum 
-    is_edited:   bool = False
-    is_deleted:  bool = False
+    status:      StatusPesanEnum
 
     class Config:
         from_attributes = True

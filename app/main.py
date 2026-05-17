@@ -404,6 +404,17 @@ def list_guru(skip=0, limit=100, db: Session = Depends(get_db), _=Depends(requir
     return crud.get_all_guru(db, skip, limit)
 
 
+@app.get("/guru/me", response_model=schemas.GuruOut, tags=["Guru"])
+def get_guru_me(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+    """Ambil data guru milik user yang sedang login (berdasarkan token)."""
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses endpoint ini")
+    obj = crud.get_guru_by_akun(db, current_user.id_akun)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Data guru tidak ditemukan")
+    return obj
+
+
 @app.get("/guru/{id_guru}", response_model=schemas.GuruOut, tags=["Guru"])
 def get_guru(id_guru: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
     obj = crud.get_guru(db, id_guru)
@@ -834,12 +845,26 @@ def buat_catatan(payload: schemas.CatatanHarianCreate, db: Session = Depends(get
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
     guru = _get_guru_or_403(db, current_user.id_akun)
-    if payload.target == models.TargetCatatanEnum.satu_kelas:
+    allowed_kelas = crud.decode_id_kelas(guru.id_kelas)  # [] jika NULL
+
+    if payload.target == models.TargetCatatanEnum.semua_kelas:
+        # Guru tanpa kelas tidak boleh kirim ke semua kelas
+        if not allowed_kelas:
+            raise HTTPException(status_code=403,
+                                detail="Akses ditolak: Anda tidak memiliki kelas yang ditugaskan")
+
+    elif payload.target == models.TargetCatatanEnum.satu_kelas:
         if not crud.get_kelas(db, payload.id_kelas):
             raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    if payload.target == models.TargetCatatanEnum.satu_siswa:
-        if not crud.get_siswa(db, payload.id_siswa):
+        _cek_guru_akses_kelas(guru, payload.id_kelas)
+
+    elif payload.target == models.TargetCatatanEnum.satu_siswa:
+        siswa = crud.get_siswa(db, payload.id_siswa)
+        if not siswa:
             raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+        if siswa.id_kelas is not None:
+            _cek_guru_akses_kelas(guru, siswa.id_kelas)
+
     catatan = crud.create_catatan_harian(db, payload, guru.id_guru)
     crud.kirim_notif_catatan(db, catatan, current_user.nama)
     return crud._build_catatan_out(catatan)

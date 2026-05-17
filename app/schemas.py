@@ -597,65 +597,87 @@ class LaporanKelasOut(BaseModel):
 # Pastikan CatatanHarianOut sudah diimport sebelum blok ini
 LaporanSiswaOut.model_rebuild()    
 
+class StatusLaporanEnum(str, Enum):
+    """
+    Status laporan manual guru.
+    Sesuai kolom Enum di tabel laporan (models.StatusLaporanEnum).
+    """
+    menunggu_verifikasi = "menunggu_verifikasi"
+    terverifikasi       = "terverifikasi"
+
+
 class LaporanCreate(BaseModel):
     """
     Request body  POST /laporan/
-    id_guru diambil otomatis dari JWT — tidak perlu dikirim.
-    id_siswa selalu wajib (sesuai LaporanResponse.java Android: idSiswa = int).
-    id_kelas diambil otomatis dari data siswa di backend.
+    - id_guru       : diambil otomatis dari JWT, tidak perlu dikirim
+    - id_kelas      : wajib — laporan dibuat per kelas, bukan per siswa
+    - periode       : bulan & tahun laporan, contoh "Mei 2025" atau "2025-05" (max 20 karakter)
+    - tanggal_dibuat: tanggal guru membuat laporan (wajib diisi dari Android)
+    - keterangan    : catatan opsional dari guru (max 100 karakter)
     """
-    id_siswa:       int           = Field(..., example=5)
-    periode:        str           = Field(..., max_length=50, example="Semester 1 2024")
+    id_kelas:       int           = Field(..., example=1, description="ID kelas yang dilaporkan")
+    periode:        str           = Field(..., max_length=20, example="Mei 2025")
     tanggal_dibuat: date          = Field(..., example="2025-05-17")
-    keterangan:     Optional[str] = Field(None, max_length=255)
- 
- 
+    keterangan:     Optional[str] = Field(None, max_length=100, description="Catatan dari guru")
+
+
 class LaporanVerifikasi(BaseModel):
-    """Request body  PUT /laporan/{id_laporan}/verifikasi"""
-    status:     bool            = Field(..., example=True,
-                                       description="true = selesai/terverifikasi")
-    keterangan: Optional[str]   = Field(None, max_length=255,
-                                       description="Catatan dari admin/kepsek")
- 
- 
+    """
+    Request body  PUT /laporan/{id_laporan}/verifikasi
+    Hanya admin yang dapat memverifikasi laporan.
+    - status    : 'terverifikasi' jika disetujui (enum string)
+    - keterangan: catatan/feedback dari admin (opsional, max 100 karakter)
+    tanggal_dibuat di DB akan di-update otomatis ke hari ini saat verifikasi.
+    """
+    status:     StatusLaporanEnum = Field(
+                    ...,
+                    example=StatusLaporanEnum.terverifikasi,
+                    description="'menunggu_verifikasi' atau 'terverifikasi'",
+                )
+    keterangan: Optional[str]     = Field(
+                    None, max_length=100,
+                    description="Catatan dari admin (boleh kosong)",
+                )
+
+
 class LaporanOut(BaseModel):
     """
     Response satu laporan manual guru.
-    Disesuaikan 1-1 dengan LaporanResponse.java Android:
-      - id_siswa   int    (bukan Optional)
-      - id_guru    Integer nullable
-      - created_at datetime nullable
-      - nama_siswa / nama_kelas / nama_guru dari JOIN
+    Perubahan vs versi lama:
+      - id_siswa  dihapus (laporan per kelas, bukan per siswa)
+      - id_kelas  ditambahkan
+      - status    kini string Enum: 'menunggu_verifikasi' | 'terverifikasi'
+      - nama_kelas dari JOIN kelas
+      - nama_guru  dari JOIN guru → akun
     """
     id_laporan:     int
-    id_siswa:       int                        # selalu ada
-    id_guru:        Optional[int]   = None     # nullable sesuai Android
+    id_kelas:       Optional[int]          = None   # nullable (SET NULL saat kelas dihapus)
+    id_guru:        Optional[int]          = None
     periode:        str
     tanggal_dibuat: date
-    status:         bool            = False    # false=belum, true=selesai
-    keterangan:     Optional[str]   = None
-    created_at:     Optional[datetime] = None  # kolom audit dari DB
- 
-    # Hasil JOIN — opsional, backend isi jika tersedia
-    nama_siswa:     Optional[str]   = None
-    nama_kelas:     Optional[str]   = None
-    nama_guru:      Optional[str]   = None
- 
+    status:         StatusLaporanEnum      = StatusLaporanEnum.menunggu_verifikasi
+    keterangan:     Optional[str]          = None
+    created_at:     Optional[datetime]     = None   # audit — kapan laporan pertama dibuat
+
+    # Hasil JOIN — diisi backend
+    nama_kelas:     Optional[str]          = None
+    nama_guru:      Optional[str]          = None
+
     class Config:
         from_attributes = True
- 
- 
+
+
 class LaporanListResponse(BaseModel):
     """
     Wrapper list laporan.
-    Disesuaikan 1-1 dengan LaporanListResponse.java Android:
-      - total, total_selesai, total_belum, data
+    total_selesai  = jumlah laporan berstatus 'terverifikasi'
+    total_belum    = jumlah laporan berstatus 'menunggu_verifikasi'
     """
     total:         int
-    total_selesai: int              = 0
-    total_belum:   int              = 0
+    total_selesai: int              = 0    # terverifikasi
+    total_belum:   int              = 0    # menunggu_verifikasi
     data:          List[LaporanOut]
-    
+
 # ─── Rekap Absensi Siswa (range tanggal) ──────────────────────────────────────
  
 class RingkasanAbsensiSiswaRangeOut(BaseModel):

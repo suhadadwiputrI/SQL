@@ -250,27 +250,37 @@ class Notifikasi(Base):
 
 # ─── Laporan Manual Guru ──────────────────────────────────────────────────────
 
+class StatusLaporanEnum(str, enum.Enum):
+    menunggu_verifikasi = "menunggu_verifikasi"
+    terverifikasi       = "terverifikasi"
+
+
 class Laporan(Base):
     """
-    Tabel laporan manual yang dibuat guru.
-    Setiap laporan untuk satu siswa (id_siswa NOT NULL).
-    nama_kelas diambil lewat relasi siswa → kelas, tidak disimpan sebagai kolom.
+    Tabel laporan kelas yang dibuat guru.
+
+    Perubahan vs versi lama:
+      - id_siswa  → id_kelas  : laporan per kelas, bukan per siswa
+      - status    : Enum ('menunggu_verifikasi' | 'terverifikasi'), bukan Boolean
+      - keterangan: VARCHAR(100) — guru bisa isi, admin bisa tambah saat verifikasi
+      - tanggal_dibuat: DATE, diisi guru saat buat; di-update otomatis via onupdate
+                        agar mencatat kapan terakhir dimodifikasi (termasuk verifikasi)
+      - created_at: TIMESTAMP, diisi otomatis oleh DB saat INSERT — tidak berubah
     """
     __tablename__ = "laporan"
 
-    # BUG DIPERBAIKI: Column diimport dari sqlalchemy, bukan Integer bawaan
-    # BUG DIPERBAIKI: DateTime diimport di atas — sebelumnya tidak ada di import
     id_laporan     = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_siswa       = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=False, index=True)
+    id_kelas       = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True,  index=True)
     id_guru        = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
-    periode        = Column(String(50),  nullable=False)
-    tanggal_dibuat = Column(Date,        nullable=False)
-    status         = Column(Boolean,     default=False, nullable=False)
-    keterangan     = Column(String(255), nullable=True)
-    # BUG DIPERBAIKI: TIMESTAMP konsisten dengan kolom lain; DateTime dihapus
-    # (DateTime tanpa timezone tidak punya server_default di MySQL, pakai TIMESTAMP)
-    created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
+    periode        = Column(String(20),  nullable=False)          # contoh: "Mei 2025", "2025-05"
+    tanggal_dibuat = Column(Date,        nullable=False)          # diisi guru; di-update saat verifikasi
+    status         = Column(
+                        Enum(StatusLaporanEnum),
+                        default=StatusLaporanEnum.menunggu_verifikasi,
+                        nullable=False,
+                    )
+    keterangan     = Column(String(100), nullable=True)           # catatan guru / admin
+    created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)  # otomatis saat INSERT
 
-    siswa = relationship("Siswa", foreign_keys=[id_siswa])
-    # BUG DIPERBAIKI: back_populates="laporan" cocok dengan Guru.laporan di atas
+    kelas = relationship("Kelas", foreign_keys=[id_kelas])
     guru  = relationship("Guru",  foreign_keys=[id_guru], back_populates="laporan")

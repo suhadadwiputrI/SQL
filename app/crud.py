@@ -682,9 +682,6 @@ def get_laporan_otomatis_kelas(
         siswa=detail_siswa,
     )
     
-# ─── Tambahkan ke crud.py — di bagian bawah file ─────────────────────────────
-# ──────────────────────────────────────────────────────────────────────────────
-
 # ─── Laporan Manual Guru ──────────────────────────────────────────────────────
 
 def get_laporan(db: Session, id_laporan: int) -> Optional[models.Laporan]:
@@ -707,18 +704,40 @@ def get_laporan_by_guru(
     )
 
 
+def get_all_laporan(
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+) -> List[models.Laporan]:
+    """Ambil semua laporan (untuk Admin)."""
+    return (
+        db.query(models.Laporan)
+        .order_by(models.Laporan.tanggal_dibuat.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+
+
 def create_laporan(
     db: Session,
     data: schemas.LaporanCreate,
     id_guru: int,
 ) -> models.Laporan:
+    """
+    Buat laporan baru oleh guru.
+    - id_kelas   : dari request body
+    - id_guru    : dari JWT (injected di endpoint)
+    - status     : default 'menunggu_verifikasi'
+    - created_at : diisi otomatis oleh DB (server_default)
+    """
     obj = models.Laporan(
-        id_siswa       = data.id_siswa,
+        id_kelas       = data.id_kelas,
         id_guru        = id_guru,
         periode        = data.periode,
         tanggal_dibuat = data.tanggal_dibuat,
         keterangan     = data.keterangan,
-        status         = False,
+        status         = models.StatusLaporanEnum.menunggu_verifikasi,
     )
     db.add(obj)
     return _commit_refresh(db, obj)
@@ -729,11 +748,18 @@ def verifikasi_laporan(
     id_laporan: int,
     data: schemas.LaporanVerifikasi,
 ) -> Optional[models.Laporan]:
+    """
+    Admin memverifikasi laporan.
+    - status       : diperbarui ke nilai dari request ('terverifikasi')
+    - keterangan   : catatan admin (boleh None)
+    - tanggal_dibuat: di-update ke hari ini agar mencatat tanggal verifikasi
+    """
     obj = get_laporan(db, id_laporan)
     if not obj:
         return None
-    obj.status     = data.status
-    obj.keterangan = data.keterangan
+    obj.status         = data.status
+    obj.keterangan     = data.keterangan
+    obj.tanggal_dibuat = date.today()          # update tanggal saat diverifikasi
     return _commit_refresh(db, obj)
 
 
@@ -749,37 +775,34 @@ def delete_laporan(db: Session, id_laporan: int) -> bool:
 def _build_laporan_out(lap: models.Laporan) -> schemas.LaporanOut:
     """
     Bangun LaporanOut dari ORM object.
-    nama_kelas diambil dari siswa.kelas (bukan kolom langsung di tabel laporan).
+    nama_kelas diambil dari relasi lap.kelas (bukan kolom langsung di tabel laporan).
     """
-    nama_kelas = None
-    if lap.siswa and lap.siswa.kelas:
-        nama_kelas = lap.siswa.kelas.nama_kelas
-
     return schemas.LaporanOut(
         id_laporan     = lap.id_laporan,
-        id_siswa       = lap.id_siswa,
+        id_kelas       = lap.id_kelas,
         id_guru        = lap.id_guru,
         periode        = lap.periode,
         tanggal_dibuat = lap.tanggal_dibuat,
         status         = lap.status,
         keterangan     = lap.keterangan,
         created_at     = lap.created_at,
-        nama_siswa     = lap.siswa.nama_siswa if lap.siswa else None,
-        nama_kelas     = nama_kelas,
+        nama_kelas     = lap.kelas.nama_kelas if lap.kelas else None,
         nama_guru      = lap.guru.akun.nama if lap.guru and lap.guru.akun else None,
     )
 
 
 def _hitung_statistik_laporan(data: list) -> dict:
     """Helper: hitung total_selesai dan total_belum dari list Laporan."""
-    total_selesai = sum(1 for l in data if l.status)
+    total_selesai = sum(
+        1 for l in data
+        if l.status == models.StatusLaporanEnum.terverifikasi
+    )
     return {
         "total":         len(data),
         "total_selesai": total_selesai,
         "total_belum":   len(data) - total_selesai,
-    }  
-    
-    
+    }
+
 # ─── Rekap Absensi Siswa (range tanggal) ──────────────────────────────────────
  
 def get_rekap_absensi_siswa_range(

@@ -982,13 +982,16 @@ def tandai_notif_dibaca(payload: schemas.BacaNotifRequest, db: Session = Depends
 # FastAPI membaca dari atas ke bawah; "/{id_laporan}" akan menangkap
 # "/absensi", "/catatan", "/guru/", "/pdf/..." jika diletakkan lebih atas.
 
-@router_laporan.post("/", response_model=schemas.LaporanOut, status_code=201, summary="Guru membuat laporan baru untuk satu siswa")
+@router_laporan.post("/", response_model=schemas.LaporanOut, status_code=201, summary="Guru membuat laporan baru untuk satu kelas")
 def buat_laporan(payload: schemas.LaporanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat laporan")
     guru = _get_guru_or_403(db, current_user.id_akun)
-    if not crud.get_siswa(db, payload.id_siswa):
-        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+    # Validasi kelas ada dan guru memiliki akses ke kelas tersebut
+    kelas = db.get(models.Kelas, payload.id_kelas)
+    if not kelas:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    _cek_guru_akses_kelas(guru, payload.id_kelas)
     lap = crud.create_laporan(db, payload, guru.id_guru)
     return crud._build_laporan_out(lap)
 
@@ -999,6 +1002,15 @@ def list_laporan_guru(skip: int = 0, limit: int = 50, db: Session = Depends(get_
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id_akun)
     data = crud.get_laporan_by_guru(db, guru.id_guru, skip, limit)
+    stat = crud._hitung_statistik_laporan(data)
+    return schemas.LaporanListResponse(**stat, data=[crud._build_laporan_out(l) for l in data])
+
+
+@router_laporan.get("/admin/", response_model=schemas.LaporanListResponse, summary="[Admin] Daftar semua laporan dari semua guru")
+def list_laporan_admin(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role not in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
+        raise HTTPException(status_code=403, detail="Hanya admin atau kepala sekolah yang dapat mengakses")
+    data = crud.get_all_laporan(db, skip, limit)
     stat = crud._hitung_statistik_laporan(data)
     return schemas.LaporanListResponse(**stat, data=[crud._build_laporan_out(l) for l in data])
 
@@ -1137,7 +1149,7 @@ def hapus_laporan(id_laporan: int, db: Session = Depends(get_db), current_user: 
     return {"message": f"Laporan {id_laporan} berhasil dihapus"}
 
 
-@router_laporan.put("/{id_laporan}/verifikasi", response_model=schemas.LaporanOut, summary="Admin / Kepala Sekolah memverifikasi laporan")
+@router_laporan.put("/{id_laporan}/verifikasi", response_model=schemas.LaporanOut, summary="Admin memverifikasi laporan (ubah status + update tanggal)")
 def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role not in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
         raise HTTPException(status_code=403, detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan")

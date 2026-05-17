@@ -613,7 +613,10 @@ def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db),
         belum_dibaca = (db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == lawan_id,
             models.Pesan.id_penerima == id_akun,
-            models.Pesan.status == models.StatusPesanEnum.diterima,
+            models.Pesan.status.in_([
+                models.StatusPesanEnum.terkirim,
+                models.StatusPesanEnum.diterima,
+            ]),
         ).count())
 
         hasil.append(schemas.PercakapanItem(

@@ -840,35 +840,32 @@ def get_ringkasan_absensi(id_siswa: int, bulan: int, tahun: int, db: Session = D
 
 # ─── Catatan Harian ───────────────────────────────────────────────────────────
 
-@app.post("/catatan/", response_model=schemas.CatatanHarianOut, status_code=201, tags=["Catatan Harian"])
-def buat_catatan(payload: schemas.CatatanHarianCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role != models.RoleEnum.guru:
-        raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
-    guru = _get_guru_or_403(db, current_user.id_akun)
-    allowed_kelas = crud.decode_id_kelas(guru.id_kelas)  # [] jika NULL
+@router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut, summary="[GURU/ADMIN] Daftar catatan harian semua siswa satu kelas (range tanggal)")
+def get_laporan_catatan(
+    id_kelas: int = Query(..., description="ID kelas"),
+    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
+    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if tanggal_awal > tanggal_akhir:
+        raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
 
-    if payload.target == models.TargetCatatanEnum.semua_kelas:
-        # Guru tanpa kelas tidak boleh kirim ke semua kelas
-        if not allowed_kelas:
-            raise HTTPException(status_code=403,
-                                detail="Akses ditolak: Anda tidak memiliki kelas yang ditugaskan")
+    # ✅ Admin/kepsek tidak perlu cek guru & akses kelas
+    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
+    if not is_admin:
+        guru = _get_guru_or_403(db, current_user.id_akun)
+        _cek_guru_akses_kelas(guru, id_kelas)
 
-    elif payload.target == models.TargetCatatanEnum.satu_kelas:
-        if not crud.get_kelas(db, payload.id_kelas):
-            raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-        _cek_guru_akses_kelas(guru, payload.id_kelas)
-
-    elif payload.target == models.TargetCatatanEnum.satu_siswa:
-        siswa = crud.get_siswa(db, payload.id_siswa)
-        if not siswa:
-            raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
-        if siswa.id_kelas is not None:
-            _cek_guru_akses_kelas(guru, siswa.id_kelas)
-
-    catatan = crud.create_catatan_harian(db, payload, guru.id_guru)
-    crud.kirim_notif_catatan(db, catatan, current_user.nama)
-    return crud._build_catatan_out(catatan)
-
+    result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    if result.siswa:
+        nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
+        for item in result.siswa:
+            if not getattr(item, "nisn", None):
+                item.nisn = nisn_map.get(item.id_siswa, "")
+    return result
 
 @app.get("/catatan/siswa/{id_siswa}", response_model=schemas.CatatanListResponse, tags=["Catatan Harian"])
 def get_catatan_siswa(id_siswa: int, skip=0, limit=20, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
@@ -1102,31 +1099,24 @@ def download_pdf_absensi(
 
 @router_laporan.get("/pdf/catatan", summary="[GURU/ADMIN] Generate PDF laporan catatan harian satu siswa")
 def download_pdf_catatan(
-    id_siswa: int = Query(..., description="ID siswa"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    id_siswa: int = Query(...),
+    tanggal_awal: date = Query(...),
+    tanggal_akhir: date = Query(...),
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
     if tanggal_awal > tanggal_akhir:
         raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
 
-    # ✅ Admin boleh akses tanpa cek kelas — guru tetap dicek seperti biasa
-    is_admin = current_user.role in (
-        models.RoleEnum.admin,
-        models.RoleEnum.kepala_sekolah,
-    )
+    # ✅ Admin/kepsek tidak perlu cek guru & akses kelas
+    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
+    siswa = db.get(models.Siswa, id_siswa)
+    if not siswa:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
     if not is_admin:
         guru = _get_guru_or_403(db, current_user.id_akun)
-        siswa = db.get(models.Siswa, id_siswa)
-        if not siswa:
-            raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
         if siswa.id_kelas is not None:
             _cek_guru_akses_kelas(guru, siswa.id_kelas)
-    else:
-        siswa = db.get(models.Siswa, id_siswa)
-        if not siswa:
-            raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
 
     nama_kelas = siswa.kelas.nama_kelas if siswa.kelas else "-"
     catatan_list = crud.get_catatan_siswa_range(db, id_siswa, tanggal_awal, tanggal_akhir)
@@ -1146,7 +1136,6 @@ def download_pdf_catatan(
     nama_file = f"laporan_catatan_{siswa.nama_siswa}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
     return StreamingResponse(BytesIO(pdf_bytes), media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{nama_file}"'})
-
 
 # ── /{id_laporan} — HARUS paling bawah di router ini ─────────────────────────
 

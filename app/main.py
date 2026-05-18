@@ -1100,7 +1100,7 @@ def download_pdf_absensi(
     )
 
 
-@router_laporan.get("/pdf/catatan", summary="[GURU] Generate PDF laporan catatan harian satu siswa")
+@router_laporan.get("/pdf/catatan", summary="[GURU/ADMIN] Generate PDF laporan catatan harian satu siswa")
 def download_pdf_catatan(
     id_siswa: int = Query(..., description="ID siswa"),
     tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
@@ -1110,12 +1110,24 @@ def download_pdf_catatan(
 ):
     if tanggal_awal > tanggal_akhir:
         raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
-    guru = _get_guru_or_403(db, current_user.id_akun)
-    siswa = db.get(models.Siswa, id_siswa)
-    if not siswa:
-        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
-    if siswa.id_kelas is not None:
-        _cek_guru_akses_kelas(guru, siswa.id_kelas)
+
+    # ✅ Admin boleh akses tanpa cek kelas — guru tetap dicek seperti biasa
+    is_admin = current_user.role in (
+        models.RoleEnum.admin,
+        models.RoleEnum.kepala_sekolah,
+    )
+    if not is_admin:
+        guru = _get_guru_or_403(db, current_user.id_akun)
+        siswa = db.get(models.Siswa, id_siswa)
+        if not siswa:
+            raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+        if siswa.id_kelas is not None:
+            _cek_guru_akses_kelas(guru, siswa.id_kelas)
+    else:
+        siswa = db.get(models.Siswa, id_siswa)
+        if not siswa:
+            raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+
     nama_kelas = siswa.kelas.nama_kelas if siswa.kelas else "-"
     catatan_list = crud.get_catatan_siswa_range(db, id_siswa, tanggal_awal, tanggal_akhir)
     catatan_out = [

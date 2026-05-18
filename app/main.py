@@ -1219,10 +1219,8 @@ def wali_download_pdf_absensi(
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
  
-    kelas = db.get(models.Kelas, id_kelas)
-    nama_kelas = kelas.nama_kelas if kelas else "-"
-    pdf_bytes = _generate_pdf_absensi(result, nama_kelas, tanggal_awal, tanggal_akhir)
-    nama_file = f"absensi_{nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
+    nama_file = f"absensi_{result.nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
+    pdf_bytes = _generate_pdf_absensi(result)
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",

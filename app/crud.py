@@ -844,14 +844,35 @@ def get_catatan_siswa_range(
 ) -> List[models.CatatanHarian]:
     """
     Ambil catatan harian satu siswa dalam rentang tanggal.
-    HANYA target = 'satu_siswa' (sesuai spesifikasi laporan).
+    Mencakup:
+      - target = 'satu_siswa' AND id_siswa cocok
+      - target = 'satu_kelas'  AND id_kelas cocok dengan kelas siswa
     Diurutkan ascending berdasarkan tanggal.
     """
+    from sqlalchemy import or_, and_
+
+    # Ambil kelas siswa untuk filter satu_kelas
+    siswa = db.get(models.Siswa, id_siswa)
+    id_kelas = siswa.id_kelas if siswa else None
+
+    conds = [
+        and_(
+            models.CatatanHarian.target == models.TargetCatatanEnum.satu_siswa,
+            models.CatatanHarian.id_siswa == id_siswa,
+        ),
+    ]
+    if id_kelas is not None:
+        conds.append(
+            and_(
+                models.CatatanHarian.target == models.TargetCatatanEnum.satu_kelas,
+                models.CatatanHarian.id_kelas == id_kelas,
+            )
+        )
+
     return (
         db.query(models.CatatanHarian)
         .filter(
-            models.CatatanHarian.target == models.TargetCatatanEnum.satu_siswa,
-            models.CatatanHarian.id_siswa == id_siswa,
+            or_(*conds),
             models.CatatanHarian.tanggal >= tanggal_awal,
             models.CatatanHarian.tanggal <= tanggal_akhir,
         )

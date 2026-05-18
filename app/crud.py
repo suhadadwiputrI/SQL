@@ -834,6 +834,30 @@ def get_rekap_absensi_siswa_range(
     return result
  
  
+# ─── Detail Absensi Harian Siswa (range tanggal) ─────────────────────────────
+
+def get_detail_absensi_siswa_range(
+    db: Session,
+    id_siswa: int,
+    tanggal_awal: date,
+    tanggal_akhir: date,
+) -> List[models.Absensi]:
+    """
+    Ambil baris absensi satu siswa dalam rentang tanggal, urut ascending.
+    Dipakai untuk PDF wali siswa (tampil per hari, bukan hanya rekap).
+    """
+    return (
+        db.query(models.Absensi)
+        .filter(
+            models.Absensi.id_siswa == id_siswa,
+            models.Absensi.tanggal  >= tanggal_awal,
+            models.Absensi.tanggal  <= tanggal_akhir,
+        )
+        .order_by(models.Absensi.tanggal.asc())
+        .all()
+    )
+
+
 # ─── Catatan Harian Siswa (range tanggal, hanya target satu_siswa) ────────────
  
 def get_catatan_siswa_range(

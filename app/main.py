@@ -1215,12 +1215,23 @@ def wali_download_pdf_absensi(
     if tanggal_awal > tanggal_akhir:
         raise HTTPException(status_code=400, detail="tanggal_awal > tanggal_akhir")
  
-    result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
-    if not result:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
- 
-    nama_file = f"absensi_{result.nama_kelas}_{tanggal_awal}_{tanggal_akhir}.pdf".replace(" ", "_")
-    pdf_bytes = _generate_pdf_absensi(result)
+    # PDF wali: tampilkan data anak sendiri saja (detail harian per siswa)
+    rekap        = crud.get_rekap_absensi_siswa_range(db, siswa.id_siswa, tanggal_awal, tanggal_akhir)
+    absensi_list = crud.get_detail_absensi_siswa_range(db, siswa.id_siswa, tanggal_awal, tanggal_akhir)
+    nama_kelas   = siswa.kelas.nama_kelas if siswa.kelas else "-"
+
+    pdf_bytes = _generate_pdf_absensi_wali(
+        nama_siswa    = siswa.nama_siswa,
+        nama_kelas    = nama_kelas,
+        tanggal_awal  = tanggal_awal,
+        tanggal_akhir = tanggal_akhir,
+        absensi_list  = absensi_list,
+        rekap         = rekap,
+    )
+    nama_file = (
+        f"absensi_{siswa.nama_siswa}_{tanggal_awal}_{tanggal_akhir}.pdf"
+        .replace(" ", "_")
+    )
     return StreamingResponse(
         BytesIO(pdf_bytes),
         media_type="application/pdf",
@@ -1443,7 +1454,233 @@ def _generate_pdf_catatan(data: schemas.LaporanCatatanSiswaOut, nama_kelas: str,
     return buffer.read()
 
 
-# ─── Daftarkan router laporan ─────────────────────────────────────────────────
+# ─── PDF Generator: Absensi Wali (per siswa, detail harian) ──────────────────
+
+def _generate_pdf_absensi_wali(
+    nama_siswa: str,
+    nama_kelas: str,
+    tanggal_awal: date,
+    tanggal_akhir: date,
+    absensi_list: list,          # list models.Absensi
+    rekap: dict,                 # {"hadir":n, "sakit":n, "izin":n, "alpha":n}
+) -> bytes:
+    from reportlab.lib.enums import TA_RIGHT
+    buffer  = BytesIO()
+    doc     = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        topMargin=1.5*cm, bottomMargin=2*cm,
+        leftMargin=2*cm,  rightMargin=2*cm,
+    )
+    styles  = getSampleStyleSheet()
+    COLOR_GREEN  = colors.HexColor("#2d6a4f")
+    COLOR_LIGHT  = colors.HexColor("#f0f7f4")
+    COLOR_BORDER = colors.HexColor("#b7d4c8")
+    COLOR_TOTAL  = colors.HexColor("#d8f3dc")
+    COLOR_GREY   = colors.HexColor("#555555")
+
+    st_judul = ParagraphStyle("WJudul", parent=styles["Heading1"],
+                              alignment=TA_CENTER, fontSize=14, spaceAfter=3,
+                              textColor=COLOR_GREEN)
+    st_sub   = ParagraphStyle("WSub",   parent=styles["Normal"],
+                              alignment=TA_CENTER, fontSize=10, spaceAfter=2)
+    st_info  = ParagraphStyle("WInfo",  parent=styles["Normal"],
+                              fontSize=10, spaceAfter=3, leftIndent=10)
+    st_label = ParagraphStyle("WLabel", parent=styles["Normal"],
+                              fontSize=9,  textColor=COLOR_GREY)
+    st_right = ParagraphStyle("WRight", parent=styles["Normal"],
+                              fontSize=9,  alignment=TA_RIGHT, textColor=COLOR_GREY)
+
+    NAMA_BULAN_ID = [
+        "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+        "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+    ]
+    NAMA_HARI_ID = {
+        0: "Senin", 1: "Selasa", 2: "Rabu", 3: "Kamis",
+        4: "Jumat", 5: "Sabtu", 6: "Minggu",
+    }
+
+    def fmt_tanggal(d: date) -> str:
+        return (f"{NAMA_HARI_ID[d.weekday()]}, "
+                f"{d.day:02d} {NAMA_BULAN_ID[d.month]} {d.year}")
+
+    def fmt_periode(a: date, b: date) -> str:
+        if a.month == b.month and a.year == b.year:
+            return f"{NAMA_BULAN_ID[a.month]} {a.year}"
+        return (f"{a.day:02d} {NAMA_BULAN_ID[a.month]} {a.year}"
+                f" s/d {b.day:02d} {NAMA_BULAN_ID[b.month]} {b.year}")
+
+    STATUS_LABEL = {
+        "hadir": "Hadir", "sakit": "Sakit",
+        "izin":  "Izin",  "alpha": "Alpha",
+    }
+    STATUS_COLOR = {
+        "hadir": colors.HexColor("#1b7a4a"),
+        "sakit": colors.HexColor("#e67e22"),
+        "izin":  colors.HexColor("#2980b9"),
+        "alpha": colors.HexColor("#c0392b"),
+    }
+    st_cell = ParagraphStyle("WCell", parent=styles["Normal"], fontSize=9, leading=12)
+
+    elems = []
+
+    # ── Header ────────────────────────────────────────────────────────────────
+    elems.append(Paragraph("LAPORAN ABSENSI SISWA", st_judul))
+    elems.append(Paragraph("TK Qoulan Sadid", st_sub))
+    elems.append(Spacer(1, 0.3*cm))
+    elems.append(HRFlowable(width="100%", thickness=1.5, color=COLOR_GREEN))
+    elems.append(Spacer(1, 0.35*cm))
+
+    # ── Info siswa ────────────────────────────────────────────────────────────
+    info_data = [
+        [Paragraph("<b>Nama Siswa</b>", st_info),
+         Paragraph(f": {nama_siswa}", st_info)],
+        [Paragraph("<b>Kelas</b>", st_info),
+         Paragraph(f": {nama_kelas}", st_info)],
+        [Paragraph("<b>Periode</b>", st_info),
+         Paragraph(f": {fmt_periode(tanggal_awal, tanggal_akhir)}", st_info)],
+    ]
+    info_tbl = Table(info_data, colWidths=[4*cm, 12*cm])
+    info_tbl.setStyle(TableStyle([
+        ("VALIGN",  (0,0), (-1,-1), "TOP"),
+        ("TOPPADDING",    (0,0), (-1,-1), 2),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 2),
+    ]))
+    elems.append(info_tbl)
+    elems.append(Spacer(1, 0.4*cm))
+    elems.append(HRFlowable(width="100%", thickness=0.5, color=COLOR_BORDER))
+    elems.append(Spacer(1, 0.35*cm))
+
+    # ── Ringkasan ─────────────────────────────────────────────────────────────
+    elems.append(Paragraph("<b>Ringkasan Kehadiran</b>", st_info))
+    elems.append(Spacer(1, 0.2*cm))
+
+    rek_data = [[
+        Paragraph(f"<b>{rekap.get('hadir',0)}</b>\nHadir",  st_cell),
+        Paragraph(f"<b>{rekap.get('izin', 0)}</b>\nIzin",   st_cell),
+        Paragraph(f"<b>{rekap.get('sakit',0)}</b>\nSakit",  st_cell),
+        Paragraph(f"<b>{rekap.get('alpha',0)}</b>\nAlpha",  st_cell),
+        Paragraph(f"<b>{rekap.get('total_hari',0)}</b>\nTotal Hari", st_cell),
+    ]]
+    rek_tbl = Table(rek_data, colWidths=[3.2*cm]*5)
+    rek_tbl.setStyle(TableStyle([
+        ("BACKGROUND",    (0,0), (0,0),  colors.HexColor("#d8f3dc")),
+        ("BACKGROUND",    (1,0), (1,0),  colors.HexColor("#d6eaf8")),
+        ("BACKGROUND",    (2,0), (2,0),  colors.HexColor("#fde8d8")),
+        ("BACKGROUND",    (3,0), (3,0),  colors.HexColor("#fadbd8")),
+        ("BACKGROUND",    (4,0), (4,0),  colors.HexColor("#eaf0fb")),
+        ("ALIGN",         (0,0), (-1,-1), "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        ("FONTNAME",      (0,0), (-1,-1), "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,-1), 11),
+        ("TOPPADDING",    (0,0), (-1,-1), 8),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 8),
+        ("GRID",          (0,0), (-1,-1), 0.5, COLOR_BORDER),
+        ("ROUNDEDCORNERS",(0,0), (-1,-1), [4,4,4,4]),
+    ]))
+    elems.append(rek_tbl)
+    elems.append(Spacer(1, 0.5*cm))
+
+    # ── Tabel detail ──────────────────────────────────────────────────────────
+    elems.append(Paragraph("<b>Detail Kehadiran Harian</b>", st_info))
+    elems.append(Spacer(1, 0.2*cm))
+
+    header = ["No", "Tanggal", "Status", "Keterangan"]
+    tbl_data = [header]
+
+    if not absensi_list:
+        tbl_data.append(["–", "Tidak ada data absensi dalam periode ini.", "", ""])
+    else:
+        for i, ab in enumerate(absensi_list, start=1):
+            status_val = ab.status.value if hasattr(ab.status, "value") else str(ab.status)
+            status_lbl = STATUS_LABEL.get(status_val, status_val.capitalize())
+            ket = ab.keterangan or "-"
+            tbl_data.append([
+                str(i),
+                fmt_tanggal(ab.tanggal),
+                status_lbl,
+                ket,
+            ])
+
+    # Baris Total
+    tbl_data.append([
+        "", "TOTAL",
+        (f"Hadir: {rekap.get('hadir',0)}  |  "
+         f"Izin: {rekap.get('izin',0)}  |  "
+         f"Sakit: {rekap.get('sakit',0)}  |  "
+         f"Alpha: {rekap.get('alpha',0)}"),
+        "",
+    ])
+
+    col_w = [0.8*cm, 5.5*cm, 2.8*cm, 7*cm]
+    tbl   = Table(tbl_data, colWidths=col_w, repeatRows=1)
+
+    # Warnai baris status secara conditional
+    ts = [
+        # Header
+        ("BACKGROUND",    (0,0), (-1,0),  COLOR_GREEN),
+        ("TEXTCOLOR",     (0,0), (-1,0),  colors.white),
+        ("FONTNAME",      (0,0), (-1,0),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0,0), (-1,0),  9),
+        ("ALIGN",         (0,0), (-1,0),  "CENTER"),
+        ("VALIGN",        (0,0), (-1,-1), "MIDDLE"),
+        # Baris data
+        ("FONTNAME",      (0,1), (-1,-2), "Helvetica"),
+        ("FONTSIZE",      (0,1), (-1,-2), 9),
+        ("ALIGN",         (0,1), (0,-1),  "CENTER"),
+        ("ALIGN",         (2,1), (2,-2),  "CENTER"),
+        ("ALIGN",         (1,1), (1,-2),  "LEFT"),
+        ("ALIGN",         (3,1), (3,-2),  "LEFT"),
+        ("ROWBACKGROUNDS",(0,1), (-1,-2), [colors.white, COLOR_LIGHT]),
+        # Baris total
+        ("BACKGROUND",   (0,-1), (-1,-1), COLOR_TOTAL),
+        ("FONTNAME",     (0,-1), (-1,-1), "Helvetica-Bold"),
+        ("FONTSIZE",     (0,-1), (-1,-1), 8),
+        ("SPAN",         (2,-1), (3,-1)),
+        # Grid
+        ("GRID",          (0,0), (-1,-1), 0.5, COLOR_BORDER),
+        ("TOPPADDING",    (0,0), (-1,-1), 5),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 5),
+        ("LEFTPADDING",   (0,0), (-1,-1), 6),
+        ("RIGHTPADDING",  (0,0), (-1,-1), 6),
+    ]
+
+    # Warnai kolom Status sesuai nilai
+    if absensi_list:
+        for row_i, ab in enumerate(absensi_list, start=1):
+            sv = ab.status.value if hasattr(ab.status, "value") else str(ab.status)
+            c  = STATUS_COLOR.get(sv)
+            if c:
+                ts.append(("TEXTCOLOR", (2, row_i), (2, row_i), c))
+                ts.append(("FONTNAME",  (2, row_i), (2, row_i), "Helvetica-Bold"))
+
+    tbl.setStyle(TableStyle(ts))
+    elems.append(tbl)
+    elems.append(Spacer(1, 0.6*cm))
+
+    # ── Penutup ───────────────────────────────────────────────────────────────
+    st_penutup = ParagraphStyle("WPenutup", parent=styles["Normal"],
+                                fontSize=9, leading=14, textColor=COLOR_GREY)
+    elems.append(Paragraph(
+        "Demikian laporan absensi ini dibuat sebagai bahan monitoring "
+        "perkembangan kehadiran siswa.",
+        st_penutup,
+    ))
+    elems.append(Spacer(1, 0.5*cm))
+    elems.append(HRFlowable(width="100%", thickness=0.5, color=COLOR_BORDER))
+    elems.append(Spacer(1, 0.25*cm))
+
+    tanggal_cetak = date.today().strftime("%d %B %Y").replace(
+        "January","Januari").replace("February","Februari").replace(
+        "March","Maret").replace("April","April").replace(
+        "May","Mei").replace("June","Juni").replace(
+        "July","Juli").replace("August","Agustus").replace(
+        "September","September").replace("October","Oktober").replace(
+        "November","November").replace("December","Desember")
+    elems.append(Paragraph(f"Tanggal Cetak: {tanggal_cetak}", st_right))
+
+    doc.build(elems)
+    buffer.seek(0)
+    return buffer.read()
 app.include_router(router_laporan)
 
 

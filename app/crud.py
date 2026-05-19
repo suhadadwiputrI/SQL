@@ -432,10 +432,8 @@ def _buat_notif(db: Session, id_akun: int, judul: str, pesan: str,
 def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
                       id_pesan: int, payload_ws: dict = None) -> models.Notifikasi:
     from app.websocket_manager import ws_manager
-    isi_pesan_preview = (payload_ws or {}).get("isi_pesan", "Pesan baru")
-    notif = _buat_notif(db, id_akun_penerima,
-                        f"Pesan dari {nama_pengirim}",
-                        isi_pesan_preview,
+    notif = _buat_notif(db, id_akun_penerima, "Pesan Baru",
+                        f"Pesan baru dari {nama_pengirim}",
                         models.TipeNotifEnum.pesan, id_pesan)
     db.commit()
     db.refresh(notif)
@@ -859,6 +857,71 @@ def verifikasi_laporan(
     obj.keterangan     = data.keterangan
     obj.tanggal_dibuat = date.today()          # update tanggal saat diverifikasi
     return _commit_refresh(db, obj)
+
+
+def kirim_notif_laporan_terverifikasi(
+    db: Session,
+    laporan: models.Laporan,
+) -> None:
+    """
+    Kirim notifikasi ke semua wali siswa di kelas laporan setelah admin verifikasi.
+    Juga kirim WebSocket event laporan_terverifikasi untuk update realtime.
+    """
+    from app.websocket_manager import ws_manager
+
+    if not laporan.id_kelas:
+        return
+
+    jenis  = laporan.jenis_laporan.value if laporan.jenis_laporan else "absensi"
+    periode = laporan.periode or ""
+    nama_kelas = laporan.kelas.nama_kelas if laporan.kelas else f"Kelas {laporan.id_kelas}"
+
+    # Cari semua siswa aktif di kelas laporan yang punya wali
+    siswa_list = (db.query(models.Siswa)
+                  .filter(models.Siswa.id_kelas == laporan.id_kelas,
+                          models.Siswa.id_wali_siswa.isnot(None)).all())
+    if not siswa_list:
+        return
+
+    id_wali_set = {s.id_wali_siswa for s in siswa_list}
+    wali_map    = {w.id_wali_siswa: w for w in
+                   db.query(models.WaliSiswa)
+                     .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+
+    for siswa in siswa_list:
+        wali = wali_map.get(siswa.id_wali_siswa)
+        if not wali:
+            continue
+
+        label_jenis = "Catatan Harian" if jenis == "catatan" else "Absensi"
+        _buat_notif(
+            db,
+            wali.id_akun,
+            f"Laporan {label_jenis} Tersedia",
+            f"Laporan {label_jenis.lower()} {nama_kelas} periode {periode} telah diverifikasi",
+            models.TipeNotifEnum.laporan,
+            laporan.id_laporan,
+        )
+
+        if ws_manager.aktif(wali.id_akun):
+            payload = {
+                "type": "laporan_terverifikasi",
+                "data": {
+                    "id_laporan":  laporan.id_laporan,
+                    "jenis":       jenis,
+                    "periode":     periode,
+                    "nama_kelas":  nama_kelas,
+                    "id_kelas":    laporan.id_kelas,
+                },
+            }
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
+            except RuntimeError:
+                pass
+
+    db.commit()
 
 
 def delete_laporan(db: Session, id_laporan: int) -> bool:

@@ -1350,6 +1350,9 @@ def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: 
     lap = crud.verifikasi_laporan(db, id_laporan, payload)
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
+    # Kirim notifikasi ke semua wali siswa di kelas laporan
+    if lap.status == models.StatusLaporanEnum.terverifikasi:
+        crud.kirim_notif_laporan_terverifikasi(db, lap)
     return crud._build_laporan_out(lap)
 
 

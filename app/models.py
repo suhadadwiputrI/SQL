@@ -223,9 +223,10 @@ class CatatanHarian(Base):
 # ─── Notifikasi ───────────────────────────────────────────────────────────────
 
 class TipeNotifEnum(str, enum.Enum):
-    pesan   = "pesan"
-    absensi = "absensi"
-    catatan = "catatan"
+    pesan    = "pesan"
+    absensi  = "absensi"
+    catatan  = "catatan"
+    laporan  = "laporan"
 
 
 class StatusNotifEnum(str, enum.Enum):

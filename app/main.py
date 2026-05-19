@@ -876,6 +876,22 @@ def get_laporan_catatan(
                 item.nisn = nisn_map.get(item.id_siswa, "")
     return result
 
+
+@app.post("/catatan/", response_model=schemas.CatatanHarianOut, status_code=201, tags=["Catatan Harian"])
+def buat_catatan(
+    payload: schemas.CatatanHarianCreate,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role != models.RoleEnum.guru:
+        raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
+    guru = _get_guru_or_403(db, current_user.id_akun)
+    catatan = crud.create_catatan_harian(db, payload, guru.id_guru)
+    # Kirim notifikasi catatan ke wali yang relevan + WebSocket event
+    crud.kirim_notif_catatan(db, catatan, current_user.nama)
+    return crud._build_catatan_out(catatan)
+
+
 @app.get("/catatan/siswa/{id_siswa}", response_model=schemas.CatatanListResponse, tags=["Catatan Harian"])
 def get_catatan_siswa(id_siswa: int, skip=0, limit=20, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     siswa = crud.get_siswa(db, id_siswa)

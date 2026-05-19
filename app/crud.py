@@ -511,6 +511,92 @@ def kirim_notif_absensi_batch(
 
     db.commit()
 
+
+
+def kirim_notif_catatan(
+    db: Session,
+    catatan: models.CatatanHarian,
+    nama_guru: str,
+) -> None:
+    """
+    Kirim notifikasi catatan ke wali yang relevan berdasarkan target catatan.
+    - semua_kelas : semua wali siswa aktif
+    - satu_kelas  : semua wali siswa di kelas tersebut
+    - satu_siswa  : satu wali dari siswa tersebut
+    Juga kirim WebSocket event catatan_baru agar client bisa update realtime.
+    """
+    from app.websocket_manager import ws_manager
+
+    target = catatan.target
+    pasangan = []
+
+    if target == models.TargetCatatanEnum.satu_siswa:
+        if catatan.id_siswa:
+            siswa = db.get(models.Siswa, catatan.id_siswa)
+            if siswa and siswa.id_wali_siswa:
+                wali = db.get(models.WaliSiswa, siswa.id_wali_siswa)
+                if wali:
+                    pasangan.append((wali, siswa))
+
+    elif target == models.TargetCatatanEnum.satu_kelas:
+        if catatan.id_kelas:
+            siswa_list = (db.query(models.Siswa)
+                          .filter(models.Siswa.id_kelas == catatan.id_kelas,
+                                  models.Siswa.id_wali_siswa.isnot(None)).all())
+            id_wali_set = {s.id_wali_siswa for s in siswa_list}
+            wali_map = {w.id_wali_siswa: w for w in
+                        db.query(models.WaliSiswa)
+                          .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+            siswa_by_wali = {s.id_wali_siswa: s for s in siswa_list}
+            for id_ws, wali in wali_map.items():
+                siswa = siswa_by_wali.get(id_ws)
+                if siswa:
+                    pasangan.append((wali, siswa))
+
+    else:  # semua_kelas
+        siswa_list = (db.query(models.Siswa)
+                      .filter(models.Siswa.id_wali_siswa.isnot(None)).all())
+        id_wali_set = {s.id_wali_siswa for s in siswa_list}
+        wali_map = {w.id_wali_siswa: w for w in
+                    db.query(models.WaliSiswa)
+                      .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+        siswa_by_wali = {s.id_wali_siswa: s for s in siswa_list}
+        for id_ws, wali in wali_map.items():
+            siswa = siswa_by_wali.get(id_ws)
+            if siswa:
+                pasangan.append((wali, siswa))
+
+    if not pasangan:
+        return
+
+    for wali, siswa in pasangan:
+        _buat_notif(
+            db, wali.id_akun,
+            f"Catatan: {catatan.judul}",
+            f"Guru {nama_guru} membuat catatan untuk {siswa.nama_siswa}",
+            models.TipeNotifEnum.catatan,
+            catatan.id_catatan,
+        )
+        if ws_manager.aktif(wali.id_akun):
+            payload = {
+                "type": "catatan_baru",
+                "data": {
+                    "id_catatan": catatan.id_catatan,
+                    "judul":      catatan.judul,
+                    "nama_guru":  nama_guru,
+                    "id_siswa":   siswa.id_siswa,
+                    "tanggal":    str(catatan.tanggal),
+                },
+            }
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
+            except RuntimeError:
+                pass
+
+    db.commit()
+
 def get_notifikasi_by_akun(db: Session, id_akun: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:
     return (db.query(models.Notifikasi).filter(models.Notifikasi.id_akun == id_akun)

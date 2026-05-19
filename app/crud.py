@@ -432,8 +432,10 @@ def _buat_notif(db: Session, id_akun: int, judul: str, pesan: str,
 def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
                       id_pesan: int, payload_ws: dict = None) -> models.Notifikasi:
     from app.websocket_manager import ws_manager
-    notif = _buat_notif(db, id_akun_penerima, "Pesan Baru",
-                        f"Pesan baru dari {nama_pengirim}",
+    isi_pesan_preview = (payload_ws or {}).get("isi_pesan", "Pesan baru")
+    notif = _buat_notif(db, id_akun_penerima,
+                        f"Pesan dari {nama_pengirim}",
+                        isi_pesan_preview,
                         models.TipeNotifEnum.pesan, id_pesan)
     db.commit()
     db.refresh(notif)

@@ -799,7 +799,7 @@ def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Dep
     for ab in hasil:
         db.refresh(ab)
     if hasil:
-        crud.kirim_notif_absensi_batch(db, payload.id_kelas, str(payload.tanggal), current_user.nama, hasil[0].id_absensi)
+        crud.kirim_notif_absensi_batch(db, payload.id_kelas, str(payload.tanggal), current_user.nama, hasil[0].id_absensi, hasil_absensi=hasil)
     return hasil
 
 

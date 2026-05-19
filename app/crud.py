@@ -449,57 +449,66 @@ def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
             pass
     return notif
 
-def kirim_notif_absensi_batch(db: Session, id_kelas: int, tanggal_str: str,
-                               nama_guru: str, id_absensi_ref: int) -> None:
+def kirim_notif_absensi_batch(
+    db: Session,
+    id_kelas: int,
+    tanggal_str: str,
+    nama_guru: str,
+    id_absensi_ref: int,
+    hasil_absensi: list = None,   # ← tambah parameter ini
+) -> None:
+    from app.websocket_manager import ws_manager
+
     siswa_list = (db.query(models.Siswa)
                   .filter(models.Siswa.id_kelas == id_kelas,
                           models.Siswa.id_wali_siswa.isnot(None)).all())
     id_wali_set = {s.id_wali_siswa for s in siswa_list}
     if not id_wali_set:
         return
-    wali_map = {w.id_wali_siswa: w for w in
-                db.query(models.WaliSiswa)
-                  .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+
+    wali_map     = {w.id_wali_siswa: w for w in
+                    db.query(models.WaliSiswa)
+                      .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
     siswa_by_wali = {s.id_wali_siswa: s for s in siswa_list}
+
+    # Buat map id_siswa → absensi untuk lookup status per siswa
+    absensi_by_siswa = {}
+    if hasil_absensi:
+        for ab in hasil_absensi:
+            absensi_by_siswa[ab.id_siswa] = ab
 
     for id_ws, wali in wali_map.items():
         siswa = siswa_by_wali.get(id_ws)
-        if siswa:
-            _buat_notif(db, wali.id_akun, "Absensi Diperbarui",
-                        f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
-                        f"telah diisi oleh {nama_guru}",
-                        models.TipeNotifEnum.absensi, id_absensi_ref)
-    db.commit()
+        if not siswa:
+            continue
 
-def kirim_notif_catatan(db: Session, catatan: models.CatatanHarian,
-                        nama_guru: str) -> None:
-    if catatan.target == models.TargetCatatanEnum.semua_kelas:
-        wali_list = db.query(models.WaliSiswa).all()
-        id_akun_list = [w.id_akun for w in wali_list]
+        # ── Simpan notifikasi ke database ─────────────────────────────────
+        _buat_notif(db, wali.id_akun, "Absensi Diperbarui",
+                    f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
+                    f"telah diisi oleh {nama_guru}",
+                    models.TipeNotifEnum.absensi, id_absensi_ref)
 
-    elif catatan.target == models.TargetCatatanEnum.satu_kelas:
-        siswa_list = (db.query(models.Siswa)
-                      .filter(models.Siswa.id_kelas == catatan.id_kelas,
-                              models.Siswa.id_wali_siswa.isnot(None)).all())
-        id_wali_set = {s.id_wali_siswa for s in siswa_list}
-        id_akun_list = [w.id_akun for w in
-                        db.query(models.WaliSiswa)
-                          .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()]
+        # ── Kirim WebSocket event ke wali ─────────────────────────────────
+        ab = absensi_by_siswa.get(siswa.id_siswa)
+        if ab and ws_manager.aktif(wali.id_akun):
+            payload = {
+                "type": "absensi_update",
+                "data": {
+                    "tanggal":    tanggal_str,
+                    "id_siswa":   siswa.id_siswa,
+                    "status":     ab.status.value,
+                    "keterangan": ab.keterangan or "",
+                    "nama_guru":  nama_guru,
+                }
+            }
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(
+                        ws_manager.kirim_ke_akun(wali.id_akun, payload))
+            except RuntimeError:
+                pass
 
-    elif catatan.target == models.TargetCatatanEnum.satu_siswa:
-        siswa = db.get(models.Siswa, catatan.id_siswa)
-        if siswa and siswa.id_wali_siswa:
-            wali = db.get(models.WaliSiswa, siswa.id_wali_siswa)
-            id_akun_list = [wali.id_akun] if wali else []
-        else:
-            id_akun_list = []
-    else:
-        id_akun_list = []
-
-    for id_akun in id_akun_list:
-        _buat_notif(db, id_akun, "Catatan Baru",
-                    f"Catatan baru dari {nama_guru}: {catatan.judul}",
-                    models.TipeNotifEnum.catatan, catatan.id_catatan)
     db.commit()
 
 def get_notifikasi_by_akun(db: Session, id_akun: int,

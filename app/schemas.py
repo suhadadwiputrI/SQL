@@ -367,12 +367,14 @@ class AbsensiHarianSiswaOut(BaseModel):
 
     class Config:
         from_attributes = True
-
-
-class RingkasanAbsensiSiswaRangeOut(BaseModel):
-    id_siswa:   int
-    nama_siswa: str
-    nisn:       Optional[str] = None   # ← TAMBAH INI
+        
+class RingkasanAbsensiOut(BaseModel):
+    """
+    Rekap absensi satu siswa dalam satu bulan.
+    Dipakai oleh GET /absensi/siswa/{id_siswa}/ringkasan
+    """
+    bulan:      int
+    tahun:      int
     hadir:      int = 0
     sakit:      int = 0
     izin:       int = 0
@@ -380,8 +382,7 @@ class RingkasanAbsensiSiswaRangeOut(BaseModel):
     total_hari: int = 0
 
     class Config:
-        from_attributes = True
-
+        from_attributes = True        
 
 class SiswaAbsensiItem(BaseModel):
     """

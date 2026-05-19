@@ -821,20 +821,29 @@ def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int, db: Session = Depen
     ]
 
 
-@app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiSiswaOut, tags=["Absensi"])
-def get_ringkasan_absensi(id_siswa: int, bulan: int, tahun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+@app.get("/absensi/siswa/{id_siswa}/ringkasan",
+         response_model=schemas.RingkasanAbsensiOut, tags=["Absensi"])
+def get_ringkasan_absensi(
+    id_siswa: int, bulan: int, tahun: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
     _cek_wali_akses_siswa(db, current_user, id_siswa)
     records = db.query(models.Absensi).filter(
         models.Absensi.id_siswa == id_siswa,
         extract("month", models.Absensi.tanggal) == bulan,
         extract("year",  models.Absensi.tanggal) == tahun,
     ).all()
+
     rekap = schemas.RingkasanAbsensiOut(bulan=bulan, tahun=tahun)
     for ab in records:
         if   ab.status == models.StatusAbsensiEnum.hadir: rekap.hadir += 1
         elif ab.status == models.StatusAbsensiEnum.sakit: rekap.sakit += 1
         elif ab.status == models.StatusAbsensiEnum.izin:  rekap.izin  += 1
         elif ab.status == models.StatusAbsensiEnum.alpha: rekap.alpha += 1
+
+    rekap.total_hari = rekap.hadir + rekap.sakit + rekap.izin + rekap.alpha
+
     return rekap
 
 

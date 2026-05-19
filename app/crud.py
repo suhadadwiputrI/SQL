@@ -444,7 +444,7 @@ def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
             if loop.is_running():
                 loop.create_task(
                     ws_manager.kirim_ke_akun(id_akun_penerima,
-                                             {"tipe": "pesan_baru", "data": payload_ws}))
+                                            {"type": "pesan_baru", "data": payload_ws}))
         except RuntimeError:
             pass
     return notif

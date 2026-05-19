@@ -1440,13 +1440,6 @@ def _generate_pdf_absensi(data: schemas.LaporanAbsensiKelasOut) -> bytes:
         ("RIGHTPADDING",   (0, 0),  (-1, -1), 6),
     ]))
     elements.append(tbl)
-    elements.append(Spacer(1, 0.5*cm))
-    style_note = ParagraphStyle("Note", parent=styles["Normal"], fontSize=9, textColor=colors.HexColor("#555555"))
-    elements.append(Paragraph(
-        f"Total Siswa: <b>{data.total_siswa}</b>  |  Total Hadir: <b>{data.total_hadir}</b>  |  "
-        f"Total Sakit: <b>{data.total_sakit}</b>  |  Total Izin: <b>{data.total_izin}</b>  |  Total Alpha: <b>{data.total_alpha}</b>",
-        style_note,
-    ))
     doc.build(elements)
     buffer.seek(0)
     return buffer.read()

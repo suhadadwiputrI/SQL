@@ -63,6 +63,7 @@ class AkunCreateWithRole(BaseModel):
 class AkunOut(AkunBase):
     id_akun:     int
     first_login: bool
+    device_id:   Optional[str] = None 
     created_at:  Optional[datetime] = None
     updated_at:  Optional[datetime] = None
 
@@ -486,6 +487,7 @@ class TipeNotifEnum(str, Enum):
     pesan   = "pesan"
     absensi = "absensi"
     catatan = "catatan"
+    laporan = "laporan"
 
 
 class StatusNotifEnum(str, Enum):
@@ -607,6 +609,15 @@ class StatusLaporanEnum(str, Enum):
     terverifikasi       = "terverifikasi"
 
 
+class JenisLaporanEnum(str, Enum):
+    """
+    Jenis laporan manual guru.
+    Sesuai kolom Enum di tabel laporan (models.JenisLaporanEnum).
+    """
+    absensi = "absensi"
+    catatan = "catatan"
+
+
 class LaporanCreate(BaseModel):
     """
     Request body  POST /laporan/
@@ -616,11 +627,12 @@ class LaporanCreate(BaseModel):
     - tanggal_dibuat: tanggal guru membuat laporan (wajib diisi dari Android)
     - keterangan    : catatan opsional dari guru (max 100 karakter)
     """
-    id_kelas:       int           = Field(..., example=1, description="ID kelas yang dilaporkan")
-    periode:        str           = Field(..., max_length=20, example="Mei 2025")
-    tanggal_dibuat: date          = Field(..., example="2025-05-17")
-    jenis_laporan : str = "absensi"
-    keterangan:     Optional[str] = Field(None, max_length=100, description="Catatan dari guru")
+    id_kelas:       int              = Field(..., example=1, description="ID kelas yang dilaporkan")
+    periode:        str              = Field(..., max_length=20, example="Mei 2025")
+    tanggal_dibuat: date             = Field(..., example="2025-05-17")
+    jenis_laporan:  JenisLaporanEnum = Field(JenisLaporanEnum.absensi, example="absensi",
+                                             description="'absensi' atau 'catatan'")
+    keterangan:     Optional[str]    = Field(None, max_length=100, description="Catatan dari guru")
 
 
 class LaporanVerifikasi(BaseModel):
@@ -653,18 +665,18 @@ class LaporanOut(BaseModel):
       - nama_guru  dari JOIN guru → akun
     """
     id_laporan:     int
-    id_kelas:       Optional[int]          = None   # nullable (SET NULL saat kelas dihapus)
-    id_guru:        Optional[int]          = None
+    id_kelas:       Optional[int]           = None   # nullable (SET NULL saat kelas dihapus)
+    id_guru:        Optional[int]           = None
     periode:        str
     tanggal_dibuat: date
-    jenis_laporan : str   
-    status:         StatusLaporanEnum      = StatusLaporanEnum.menunggu_verifikasi
-    keterangan:     Optional[str]          = None
-    created_at:     Optional[datetime]     = None   # audit — kapan laporan pertama dibuat
+    jenis_laporan:  Optional[JenisLaporanEnum] = JenisLaporanEnum.absensi
+    status:         StatusLaporanEnum       = StatusLaporanEnum.menunggu_verifikasi
+    keterangan:     Optional[str]           = None
+    created_at:     Optional[datetime]      = None   # audit — kapan laporan pertama dibuat
 
     # Hasil JOIN — diisi backend
-    nama_kelas:     Optional[str]          = None
-    nama_guru:      Optional[str]          = None
+    nama_kelas:     Optional[str]           = None
+    nama_guru:      Optional[str]           = None
 
     class Config:
         from_attributes = True

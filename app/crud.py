@@ -426,6 +426,37 @@ def _build_catatan_out(catatan: models.CatatanHarian) -> schemas.CatatanHarianOu
         nama_kelas=catatan.kelas.nama_kelas if catatan.kelas else None,
     )
 
+# ─── Absensi ──────────────────────────────────────────────────────────────────
+
+def get_absensi(db: Session, id_absensi: int) -> Optional[models.Absensi]:
+    return db.get(models.Absensi, id_absensi)
+
+def get_absensi_by_siswa_tanggal(db: Session, id_siswa: int,
+                                  tanggal) -> Optional[models.Absensi]:
+    return db.query(models.Absensi).filter(
+        models.Absensi.id_siswa == id_siswa,
+        models.Absensi.tanggal == tanggal,
+    ).first()
+
+def get_absensi_by_kelas_tanggal(db: Session, id_kelas: int,
+                                  tanggal) -> list:
+    siswa_ids = [s.id_siswa for s in db.query(models.Siswa)
+                 .filter(models.Siswa.id_kelas == id_kelas).all()]
+    if not siswa_ids:
+        return []
+    return db.query(models.Absensi).filter(
+        models.Absensi.id_siswa.in_(siswa_ids),
+        models.Absensi.tanggal == tanggal,
+    ).all()
+
+def delete_absensi(db: Session, id_absensi: int) -> bool:
+    obj = get_absensi(db, id_absensi)
+    if not obj:
+        return False
+    db.delete(obj)
+    db.commit()
+    return True
+
 
 # ─── Notifikasi ───────────────────────────────────────────────────────────────
 

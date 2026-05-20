@@ -91,9 +91,21 @@ def get_current_user(
             raise exc
     except jwt.PyJWTError:
         raise exc
+
     akun = crud.get_akun(db, id_akun)
     if not akun:
         raise exc
+
+    # ✅ TAMBAHAN: Cek apakah device sudah di-force logout
+    # Jika device_id di DB sudah NULL, akun ini sudah di-kick
+    token_device_id = payload.get("device_id")
+    if token_device_id and akun.device_id != token_device_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesi telah berakhir. Silakan login kembali.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     return akun
 
 
@@ -139,9 +151,9 @@ def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int)
 def seed_master_admin():
     db = next(get_db())
     try:
-        if not crud.get_akun_by_username(db, "test"):
-            crud.create_admin_with_akun(db, schemas.AdminCreate(username="test", nama="Admin"))
-            logging.info("Akun TEST dibuat")
+        if not crud.get_akun_by_username(db, "TkQoulansadid"):
+            crud.create_admin_with_akun(db, schemas.AdminCreate(username="TkQoulansadid", nama="Admin"))
+            logging.info("Akun DEFAULT dibuat")
         for id_k, nama_k in [(1, "TK A"), (2, "TK B")]:
             if not db.get(models.Kelas, id_k):
                 db.add(models.Kelas(id_kelas=id_k, nama_kelas=nama_k))
@@ -187,6 +199,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         db.commit()
     token = create_access_token({
         "id_akun":     akun.id_akun,
+        "device_id": akun.device_id,
         "username":    akun.username,
         "role":        akun.role.value,
         "first_login": akun.first_login,
@@ -201,7 +214,7 @@ def logout(db: Session = Depends(get_db), current_user: models.Akun = Depends(ge
     return {"message": "Logout berhasil"}
 
 @app.post("/akun/{id_akun}/force-logout", tags=["Akun"])
-def force_logout(
+async def force_logout(          # ← tambah async
     id_akun: int,
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user)
@@ -213,8 +226,13 @@ def force_logout(
     berhasil = crud.force_logout_akun(db, id_akun)
     if not berhasil:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan atau sudah offline")
-    return {"message": "Logout paksa berhasil"}
 
+    await ws_manager.kirim_ke_akun(id_akun, {   # ← tambahkan ini
+        "type": "force_logout",
+        "message": "Sesi Anda telah diakhiri oleh Admin."
+    })
+
+    return {"message": "Logout paksa berhasil"}
 
 @app.get("/auth/me", tags=["Auth"])
 def me(current_user: models.Akun = Depends(get_current_user)):
@@ -898,6 +916,41 @@ def get_ringkasan_absensi(
 
 
 # ─── Catatan Harian ───────────────────────────────────────────────────────────
+
+@router_laporan.get("/otomatis/siswa/{id_siswa}", response_model=schemas.LaporanSiswaOut,
+                    summary="[WALI/GURU/ADMIN] Laporan otomatis satu siswa (absensi + catatan)")
+def get_laporan_otomatis_siswa(
+    id_siswa: int,
+    bulan: int = Query(..., ge=1, le=12, description="Bulan (1-12)"),
+    tahun: int = Query(..., ge=2000, description="Tahun, contoh: 2025"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    _cek_wali_akses_siswa(db, current_user, id_siswa)
+    result = crud.get_laporan_otomatis_siswa(db, id_siswa, bulan, tahun)
+    if not result:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+    return result
+
+
+@router_laporan.get("/otomatis/kelas/{id_kelas}", response_model=schemas.LaporanKelasOut,
+                    summary="[GURU/ADMIN] Laporan otomatis satu kelas (rekap absensi semua siswa)")
+def get_laporan_otomatis_kelas(
+    id_kelas: int,
+    bulan: int = Query(..., ge=1, le=12, description="Bulan (1-12)"),
+    tahun: int = Query(..., ge=2000, description="Tahun, contoh: 2025"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
+    if not is_admin:
+        guru = _get_guru_or_403(db, current_user.id_akun)
+        _cek_guru_akses_kelas(guru, id_kelas)
+    result = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    return result
+
 
 @router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut, summary="[GURU/ADMIN] Daftar catatan harian semua siswa satu kelas (range tanggal)")
 def get_laporan_catatan(
@@ -1739,12 +1792,14 @@ async def websocket_endpoint(websocket: WebSocket, id_akun: int, token: str):
     except jwt.PyJWTError:
         await websocket.close(code=4001)
         return
+
     await ws_manager.connect(id_akun, websocket)
     try:
         while True:
-            await asyncio.sleep(30)
-            await websocket.send_text('{"tipe":"ping"}')
-    except (WebSocketDisconnect, Exception):
+            data = await asyncio.wait_for(
+                websocket.receive_text(), timeout=60.0
+            )
+    except (WebSocketDisconnect, asyncio.TimeoutError, Exception):
         pass
     finally:
         ws_manager.disconnect(id_akun, websocket)

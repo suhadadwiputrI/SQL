@@ -1096,29 +1096,6 @@ def get_laporan_absensi(
     return result
 
 
-@router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut, summary="[GURU] Daftar catatan harian semua siswa satu kelas (range tanggal)")
-def get_laporan_catatan(
-    id_kelas: int = Query(..., description="ID kelas"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    if tanggal_awal > tanggal_akhir:
-        raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
-    guru = _get_guru_or_403(db, current_user.id_akun)
-    _cek_guru_akses_kelas(guru, id_kelas)
-    result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
-    if not result:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    # ── Inject nisn dari DB ───────────────────────────────────────────────────
-    if result.siswa:
-        nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
-        for item in result.siswa:
-            if not getattr(item, "nisn", None):
-                item.nisn = nisn_map.get(item.id_siswa, "")
-    return result
-
 
 @router_laporan.get("/pdf/absensi", summary="Generate PDF laporan absensi satu kelas")
 def download_pdf_absensi(

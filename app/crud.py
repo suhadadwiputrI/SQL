@@ -440,11 +440,10 @@ def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
 
     if payload_ws and ws_manager.aktif(id_akun_penerima):
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(
-                    ws_manager.kirim_ke_akun(id_akun_penerima,
-                                            {"type": "pesan_baru", "data": payload_ws}))
+            loop = asyncio.get_running_loop()
+            loop.call_soon_threadsafe(
+                loop.create_task,
+                ws_manager.kirim_ke_akun(id_akun_penerima, payload_ws))
         except RuntimeError:
             pass
     return notif
@@ -502,14 +501,14 @@ def kirim_notif_absensi_batch(
                 }
             }
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(
-                        ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(
+                    loop.create_task,
+                    ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
 
-    db.commit()
+    db.flush() 
 
 
 
@@ -589,13 +588,14 @@ def kirim_notif_catatan(
                 },
             }
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(
+                    loop.create_task,
+                    ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
 
-    db.commit()
+    db.flush() 
 
 def get_notifikasi_by_akun(db: Session, id_akun: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:
@@ -915,13 +915,14 @@ def kirim_notif_laporan_terverifikasi(
                 },
             }
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(
+                    loop.create_task,
+                    ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
 
-    db.commit()
+    db.flush() 
 
 
 def delete_laporan(db: Session, id_laporan: int) -> bool:

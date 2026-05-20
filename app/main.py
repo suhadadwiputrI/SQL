@@ -1461,9 +1461,9 @@ def _generate_pdf_catatan(data: schemas.LaporanCatatanSiswaOut, nama_kelas: str,
     elements.append(Spacer(1, 0.3*cm))
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#2d6a4f")))
     elements.append(Spacer(1, 0.3*cm))
-    elements.append(Paragraph(f"Nama Siswa : <b>{data.nama_siswa}", style_info))
-    elements.append(Paragraph(f"Kelas      : <b>{nama_kelas}", style_info))
-    elements.append(Paragraph(f"Periode    : <b>{tanggal_awal.strftime('%d-%m-%Y')} s/d {tanggal_akhir.strftime('%d-%m-%Y')}", style_info))
+    elements.append(Paragraph(f"Nama Siswa : {data.nama_siswa}", style_info))
+    elements.append(Paragraph(f"Kelas      : {nama_kelas}", style_info))
+    elements.append(Paragraph(f"Periode    : {tanggal_awal.strftime('%d-%m-%Y')} s/d {tanggal_akhir.strftime('%d-%m-%Y')}", style_info))
     elements.append(Spacer(1, 0.4*cm))
     if not data.catatan:
         style_empty = ParagraphStyle("Empty", parent=styles["Normal"], alignment=TA_CENTER, fontSize=10, textColor=colors.HexColor("#999999"))
@@ -1627,7 +1627,6 @@ def _generate_pdf_absensi_wali(
         ("TOPPADDING",    (0,0), (-1,-1), 8),
         ("BOTTOMPADDING", (0,0), (-1,-1), 8),
         ("GRID",          (0,0), (-1,-1), 0.5, COLOR_BORDER),
-        ("ROUNDEDCORNERS",(0,0), (-1,-1), [4,4,4,4]),
     ]))
     elems.append(rek_tbl)
     elems.append(Spacer(1, 0.5*cm))

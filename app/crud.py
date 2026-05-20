@@ -86,6 +86,14 @@ def delete_akun(db: Session, id_akun: int) -> bool:
     db.commit()
     return True
 
+def force_logout_akun(db: Session, id_akun: int) -> bool:
+    obj = get_akun(db, id_akun)
+    if not obj or obj.device_id is None:
+        return False
+    obj.device_id = None
+    db.commit()
+    return True
+
 
 # ─── Reset Password ───────────────────────────────────────────────────────────
 

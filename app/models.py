@@ -34,9 +34,9 @@ class Akun(Base):
     __tablename__ = "akun"
 
     id_akun     = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    username    = Column(String(100), unique=True, index=True, nullable=False)
-    password    = Column(String(255), nullable=False)
-    nama        = Column(String(100), nullable=False)
+    username    = Column(String(50), unique=True, index=True, nullable=False)
+    password    = Column(String(70), nullable=False)
+    nama        = Column(String(50), nullable=False)
     role        = Column(Enum(RoleEnum), default=RoleEnum.admin, nullable=False)
     first_login = Column(Boolean, default=True, nullable=False)
     device_id   = Column(String(64), nullable=True)
@@ -124,7 +124,7 @@ class Siswa(Base):
     id_kelas      = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True)
     id_wali_siswa = Column(INTEGER(13), ForeignKey("wali_siswa.id_wali_siswa", ondelete="SET NULL"), nullable=True)
     nisn          = Column(String(25), unique=True, nullable=False)
-    nama_siswa    = Column(String(100), nullable=False)
+    nama_siswa    = Column(String(50), nullable=False)
     jenis_kelamin = Column(Enum(JenisKelaminEnum), nullable=False)
     tgl_lahir     = Column(Date, nullable=False)
     tahun_masuk   = Column(INTEGER(7), nullable=False)

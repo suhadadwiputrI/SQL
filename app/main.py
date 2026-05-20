@@ -200,6 +200,21 @@ def logout(db: Session = Depends(get_db), current_user: models.Akun = Depends(ge
     db.commit()
     return {"message": "Logout berhasil"}
 
+@app.post("/akun/{id_akun}/force-logout", tags=["Akun"])
+def force_logout(
+    id_akun: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user)
+):
+    if current_user.role != models.RoleEnum.admin:
+        raise HTTPException(status_code=403, detail="Hanya admin yang dapat melakukan logout paksa")
+    if id_akun == current_user.id_akun:
+        raise HTTPException(status_code=400, detail="Tidak dapat logout paksa akun sendiri")
+    berhasil = crud.force_logout_akun(db, id_akun)
+    if not berhasil:
+        raise HTTPException(status_code=404, detail="Akun tidak ditemukan atau sudah offline")
+    return {"message": "Logout paksa berhasil"}
+
 
 @app.get("/auth/me", tags=["Auth"])
 def me(current_user: models.Akun = Depends(get_current_user)):

@@ -278,7 +278,9 @@ def delete_akun(id_akun: int, db: Session = Depends(get_db), _=Depends(require_a
 
 
 @app.post("/akun/{id_akun}/selesai-setup", response_model=schemas.AkunOut, tags=["Akun"])
-def selesai_setup(id_akun: int, db: Session = Depends(get_db)):
+def selesai_setup(id_akun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role != models.RoleEnum.admin and current_user.id_akun != id_akun:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
     akun = crud.get_akun(db, id_akun)
     if not akun:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
@@ -1432,7 +1434,10 @@ def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: 
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
     # Kirim notifikasi ke semua wali siswa di kelas laporan
     if lap.status == models.StatusLaporanEnum.terverifikasi:
-        crud.kirim_notif_laporan_terverifikasi(db, lap)
+        try:
+            crud.kirim_notif_laporan_terverifikasi(db, lap)
+        except Exception as e:
+            logging.error("Gagal kirim notif laporan terverifikasi id=%s: %s", id_laporan, e)
     return crud._build_laporan_out(lap)
 
 

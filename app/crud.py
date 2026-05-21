@@ -541,13 +541,14 @@ def kirim_notif_absensi_batch(
             }
             try:
                 loop = asyncio.get_running_loop()
-                loop.call_soon_threadsafe(
-                    loop.create_task,
-                    ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                if loop.is_running():
+                    loop.call_soon_threadsafe(
+                        loop.create_task,
+                        ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
 
-    db.flush() 
+    db.commit()  # Bug #4 fix: flush() → commit() agar notifikasi absensi tersimpan
 
 
 
@@ -911,7 +912,7 @@ def kirim_notif_laporan_terverifikasi(
     if not laporan.id_kelas:
         return
 
-    jenis  = laporan.jenis_laporan.value if laporan.jenis_laporan else "absensi"
+    jenis  = laporan.jenis_laporan.value if hasattr(laporan.jenis_laporan, "value") else str(laporan.jenis_laporan or "absensi")
     periode = laporan.periode or ""
     nama_kelas = laporan.kelas.nama_kelas if laporan.kelas else f"Kelas {laporan.id_kelas}"
 
@@ -955,13 +956,14 @@ def kirim_notif_laporan_terverifikasi(
             }
             try:
                 loop = asyncio.get_running_loop()
-                loop.call_soon_threadsafe(
-                    loop.create_task,
-                    ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                if loop.is_running():
+                    loop.call_soon_threadsafe(
+                        loop.create_task,
+                        ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
 
-    db.flush() 
+    db.commit()  # Bug #1 fix: flush() → commit() agar notifikasi benar-benar tersimpan
 
 
 def delete_laporan(db: Session, id_laporan: int) -> bool:

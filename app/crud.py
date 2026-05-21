@@ -885,10 +885,9 @@ def verifikasi_laporan(
 ) -> Optional[models.Laporan]:
     from sqlalchemy.orm import joinedload
 
-    obj = db.query(models.Laporan).options(
-        joinedload(models.Laporan.kelas),
-        joinedload(models.Laporan.guru).joinedload(models.Guru.akun),
-    ).filter(models.Laporan.id_laporan == id_laporan).first()
+    obj = db.query(models.Laporan).filter(
+        models.Laporan.id_laporan == id_laporan
+    ).first()
 
     if not obj:
         return None
@@ -896,11 +895,17 @@ def verifikasi_laporan(
     obj.keterangan = data.keterangan if data.keterangan else None
     try:
         db.commit()
-        db.refresh(obj)
     except Exception as e:
         db.rollback()
         raise e
-    return obj
+
+    # Query ulang dengan joinedload agar relasi kelas & guru.akun
+    # tersedia saat _build_laporan_out mengaksesnya — db.refresh()
+    # tidak me-refresh relasi yang sudah expire setelah commit.
+    return db.query(models.Laporan).options(
+        joinedload(models.Laporan.kelas),
+        joinedload(models.Laporan.guru).joinedload(models.Guru.akun),
+    ).filter(models.Laporan.id_laporan == id_laporan).first()
 
 
 def delete_laporan(db: Session, id_laporan: int) -> bool:

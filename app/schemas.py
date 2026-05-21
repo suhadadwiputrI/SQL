@@ -630,7 +630,7 @@ LaporanSiswaOut.model_rebuild()
 
 class StatusLaporanEnum(str, Enum):
     menunggu_verifikasi = "menunggu_verifikasi"
-    terverifikasi       = "terverifikasi"
+    verifikasi       = "verifikasi"
 
 
 class JenisLaporanEnum(str, Enum):
@@ -662,8 +662,8 @@ class LaporanVerifikasi(BaseModel):
     """
     status:     StatusLaporanEnum = Field(
                     ...,
-                    example=StatusLaporanEnum.terverifikasi,
-                    description="'menunggu_verifikasi' atau 'terverifikasi'",
+                    example=StatusLaporanEnum.verifikasi,
+                    description="'menunggu_verifikasi' atau 'verifikasi'",
                 )
     keterangan: Optional[str]     = Field(None, max_length=100, description="Catatan dari admin")
 
@@ -691,7 +691,7 @@ class LaporanOut(BaseModel):
 class LaporanListResponse(BaseModel):
     """
     Wrapper list laporan.
-    total_selesai = jumlah laporan berstatus 'terverifikasi'
+    total_selesai = jumlah laporan berstatus 'verifikasi'
     total_belum   = jumlah laporan berstatus 'menunggu_verifikasi'
     """
     total:         int

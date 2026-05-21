@@ -894,7 +894,6 @@ def verifikasi_laporan(
         return None
     obj.status         = data.status
     obj.keterangan     = data.keterangan
-    obj.tanggal_dibuat = date.today()
     return _commit_refresh(db, obj)
 
 def kirim_notif_laporan_terverifikasi(
@@ -1002,7 +1001,7 @@ def _hitung_statistik_laporan(data: list) -> dict:
     """Helper: hitung total_selesai dan total_belum dari list Laporan."""
     total_selesai = sum(
         1 for l in data
-        if l.status == models.StatusLaporanEnum.terverifikasi
+        if l.status == models.StatusLaporanEnum.verifikasi
     )
     return {
         "total":         len(data),

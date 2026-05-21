@@ -89,7 +89,7 @@ class ResetPasswordUpdate(BaseModel):
 
 class ResetPasswordOut(ResetPasswordBase):
     id_pertanyaan: int
-    id:            int
+    id_akun:       int
 
     class Config:
         from_attributes = True
@@ -150,7 +150,7 @@ class AdminCreate(BaseModel):
 
 class AdminOut(BaseModel):
     id_admin: int
-    id:       int
+    id_akun:  int
     akun:     Optional[AkunOut] = None
 
     class Config:
@@ -169,7 +169,7 @@ class KepsekUpdate(BaseModel):
 
 class KepsekOut(BaseModel):
     id_kepsek: int
-    id:        int
+    id_akun:   int
     nip:       Optional[str] = None
     akun:      Optional[AkunOut] = None
 
@@ -196,7 +196,7 @@ class SiswaSimpleOut(BaseModel):
 
 class WaliSiswaOut(BaseModel):
     id_wali_siswa: int
-    id:            int
+    id_akun:       int
     id_siswa:      Optional[int] = None
     no_hp_telp:    Optional[str] = None
     alamat:        Optional[str] = None
@@ -292,7 +292,7 @@ class GuruListItem(BaseModel):
     
 class GuruOut(BaseModel):
     id_guru:       int
-    id:            int
+    id_akun:       int
     nip:           Optional[str]       = None
     list_id_kelas: Optional[List[int]] = None
     akun:          Optional[AkunOut]   = None
@@ -498,7 +498,7 @@ class StatusNotifEnum(str, Enum):
 class NotifikasiOut(BaseModel):
     """Response satu item notifikasi."""
     id_notif : int
-    id       : int
+    id_akun  : int
     judul    : str
     pesan    : str
     tipe     : TipeNotifEnum

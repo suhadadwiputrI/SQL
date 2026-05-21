@@ -238,6 +238,7 @@ class SiswaUpdate(BaseModel):
 class SiswaOut(SiswaBase):
     id_siswa:      int
     id_wali_siswa: Optional[int]         = None
+    kelas:         Optional[KelasOut]    = None
     wali_siswa:    Optional[WaliSiswaOut] = None
 
     class Config:

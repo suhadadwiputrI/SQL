@@ -1327,6 +1327,7 @@ def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: 
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
     return crud._build_laporan_out(lap)
 
+app.include_router(router_laporan, tags=["Laporan"])
 
 
 # ─── PDF Generator: Buku Absensi Harian Kelas ────────────────────────────────

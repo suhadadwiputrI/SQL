@@ -86,13 +86,13 @@ def get_current_user(
     )
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        id_akun = payload.get("id_akun")
-        if id_akun is None:
+        id = payload.get("id")
+        if id is None:
             raise exc
     except jwt.PyJWTError:
         raise exc
 
-    akun = crud.get_akun(db, id_akun)
+    akun = crud.get_akun(db, id)
     if not akun:
         raise exc
 
@@ -122,8 +122,8 @@ def _buat_inisial(nama: str) -> str:
     return "".join(p[0].upper() for p in parts[:2])
 
 
-def _get_guru_or_403(db: Session, id_akun: int) -> models.Guru:
-    guru = crud.get_guru_by_akun(db, id_akun)
+def _get_guru_or_403(db: Session, id: int) -> models.Guru:
+    guru = crud.get_guru_by_akun(db, id)
     if not guru:
         raise HTTPException(status_code=404, detail="Data guru tidak ditemukan")
     return guru
@@ -140,7 +140,7 @@ def _cek_guru_akses_kelas(guru: models.Guru, id_kelas: int) -> None:
 
 def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int):
     if current_user.role == models.RoleEnum.wali_siswa:
-        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        wali = crud.get_wali_siswa_by_akun(db, current_user.id)
         if not wali or wali.id_siswa != id_siswa:
             raise HTTPException(status_code=403, detail="Akses ditolak")
 
@@ -198,7 +198,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         akun.device_id = device_id
         db.commit()
     token = create_access_token({
-        "id_akun":     akun.id_akun,
+        "id":          akun.id,
         "device_id": akun.device_id,
         "username":    akun.username,
         "role":        akun.role.value,
@@ -213,21 +213,21 @@ def logout(db: Session = Depends(get_db), current_user: models.Akun = Depends(ge
     db.commit()
     return {"message": "Logout berhasil"}
 
-@app.post("/akun/{id_akun}/force-logout", tags=["Akun"])
+@app.post("/akun/{id}/force-logout", tags=["Akun"])
 async def force_logout(          # ← tambah async
-    id_akun: int,
+    id: int,
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user)
 ):
     if current_user.role != models.RoleEnum.admin:
         raise HTTPException(status_code=403, detail="Hanya admin yang dapat melakukan logout paksa")
-    if id_akun == current_user.id_akun:
+    if id == current_user.id:
         raise HTTPException(status_code=400, detail="Tidak dapat logout paksa akun sendiri")
-    berhasil = crud.force_logout_akun(db, id_akun)
+    berhasil = crud.force_logout_akun(db, id)
     if not berhasil:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan atau sudah offline")
 
-    await ws_manager.kirim_ke_akun(id_akun, {   # ← tambahkan ini
+    await ws_manager.kirim_ke_akun(id, {   # ← tambahkan ini
         "type": "force_logout",
         "message": "Sesi Anda telah diakhiri oleh Admin."
     })
@@ -254,34 +254,34 @@ def get_akun_by_username(username: str, db: Session = Depends(get_db)):
     return akun
 
 
-@app.get("/akun/{id_akun}", response_model=schemas.AkunOut, tags=["Akun"])
-def get_akun(id_akun: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
-    akun = crud.get_akun(db, id_akun)
+@app.get("/akun/{id}", response_model=schemas.AkunOut, tags=["Akun"])
+def get_akun(id: int, db: Session = Depends(get_db), _=Depends(get_current_user)):
+    akun = crud.get_akun(db, id)
     if not akun:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
     return akun
 
 
-@app.put("/akun/{id_akun}", response_model=schemas.AkunOut, tags=["Akun"])
-def update_akun(id_akun: int, akun: schemas.AkunUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
-    obj = crud.update_akun(db, id_akun, akun)
+@app.put("/akun/{id}", response_model=schemas.AkunOut, tags=["Akun"])
+def update_akun(id: int, akun: schemas.AkunUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
+    obj = crud.update_akun(db, id, akun)
     if not obj:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
     return obj
 
 
-@app.delete("/akun/{id_akun}", tags=["Akun"])
-def delete_akun(id_akun: int, db: Session = Depends(get_db), _=Depends(require_admin)):
-    if not crud.delete_akun(db, id_akun):
+@app.delete("/akun/{id}", tags=["Akun"])
+def delete_akun(id: int, db: Session = Depends(get_db), _=Depends(require_admin)):
+    if not crud.delete_akun(db, id):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    return {"message": f"Akun {id_akun} berhasil dihapus"}
+    return {"message": f"Akun {id} berhasil dihapus"}
 
 
-@app.post("/akun/{id_akun}/selesai-setup", response_model=schemas.AkunOut, tags=["Akun"])
-def selesai_setup(id_akun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role != models.RoleEnum.admin and current_user.id_akun != id_akun:
+@app.post("/akun/{id}/selesai-setup", response_model=schemas.AkunOut, tags=["Akun"])
+def selesai_setup(id: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role != models.RoleEnum.admin and current_user.id != id:
         raise HTTPException(status_code=403, detail="Akses ditolak")
-    akun = crud.get_akun(db, id_akun)
+    akun = crud.get_akun(db, id)
     if not akun:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
     akun.first_login = False
@@ -290,9 +290,9 @@ def selesai_setup(id_akun: int, db: Session = Depends(get_db), current_user: mod
     return akun
 
 
-@app.post("/akun/{id_akun}/ganti-password-firstlogin", response_model=schemas.AkunOut, tags=["Akun"])
-def ganti_password_first_login(id_akun: int, payload: schemas.GantiPasswordFirstLoginRequest, db: Session = Depends(get_db)):
-    akun = crud.get_akun(db, id_akun)
+@app.post("/akun/{id}/ganti-password-firstlogin", response_model=schemas.AkunOut, tags=["Akun"])
+def ganti_password_first_login(id: int, payload: schemas.GantiPasswordFirstLoginRequest, db: Session = Depends(get_db)):
+    akun = crud.get_akun(db, id)
     if not akun:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
     if not akun.first_login:
@@ -326,18 +326,18 @@ async def create_akun_with_role(request: Request, db: Session = Depends(get_db),
 
 @app.post("/reset-password/", response_model=schemas.ResetPasswordOut, status_code=201, tags=["Reset Password"])
 def create_reset_password(rp: schemas.ResetPasswordCreate, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, rp.id_akun):
+    if not crud.get_akun(db, rp.id):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    if crud.get_reset_password_by_akun(db, rp.id_akun):
+    if crud.get_reset_password_by_akun(db, rp.id):
         raise HTTPException(status_code=400, detail="Pertanyaan keamanan sudah ada")
     return crud.create_reset_password(db, rp)
 
 
-@app.get("/reset-password/akun/{id_akun}", response_model=schemas.ResetPasswordOut, tags=["Reset Password"])
-def get_pertanyaan_by_akun(id_akun: int, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, id_akun):
+@app.get("/reset-password/akun/{id}", response_model=schemas.ResetPasswordOut, tags=["Reset Password"])
+def get_pertanyaan_by_akun(id: int, db: Session = Depends(get_db)):
+    if not crud.get_akun(db, id):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    obj = crud.get_reset_password_by_akun(db, id_akun)
+    obj = crud.get_reset_password_by_akun(db, id)
     if not obj:
         raise HTTPException(status_code=404, detail="Pertanyaan keamanan tidak ditemukan")
     return obj
@@ -345,21 +345,21 @@ def get_pertanyaan_by_akun(id_akun: int, db: Session = Depends(get_db)):
 
 @app.post("/reset-password/verify", tags=["Reset Password"])
 def verify_jawaban(payload: schemas.VerifyJawabanRequest, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, payload.id_akun):
+    if not crud.get_akun(db, payload.id):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    if not crud.verify_jawaban_reset(db, payload.id_akun, payload.jawaban):
+    if not crud.verify_jawaban_reset(db, payload.id, payload.jawaban):
         raise HTTPException(status_code=400, detail="Jawaban keamanan salah")
     return {"message": "Jawaban benar. Silakan ganti password."}
 
 
 @app.post("/reset-password/ganti-password", response_model=schemas.AkunOut, tags=["Reset Password"])
 def ganti_password(payload: schemas.GantiPasswordRequest, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, payload.id_akun):
+    if not crud.get_akun(db, payload.id):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    if not crud.verify_jawaban_reset(db, payload.id_akun, payload.jawaban):
+    if not crud.verify_jawaban_reset(db, payload.id, payload.jawaban):
         raise HTTPException(status_code=400, detail="Jawaban keamanan salah")
     try:
-        akun = crud.ganti_password(db, payload.id_akun, payload.password_baru)
+        akun = crud.ganti_password(db, payload.id, payload.password_baru)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return akun
@@ -444,7 +444,7 @@ def get_guru_me(db: Session = Depends(get_db), current_user: models.Akun = Depen
     """Ambil data guru milik user yang sedang login (berdasarkan token)."""
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses endpoint ini")
-    obj = crud.get_guru_by_akun(db, current_user.id_akun)
+    obj = crud.get_guru_by_akun(db, current_user.id)
     if not obj:
         raise HTTPException(status_code=404, detail="Data guru tidak ditemukan")
     return obj
@@ -589,11 +589,11 @@ def update_wali_siswa(id_wali_siswa: int, data: schemas.WaliSiswaUpdate, db: Ses
     return obj
 
 
-@app.get("/wali-siswa/by-akun/{id_akun}", response_model=schemas.WaliSiswaOut, tags=["Wali Siswa"])
-def get_wali_by_akun(id_akun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role == models.RoleEnum.wali_siswa and current_user.id_akun != id_akun:
+@app.get("/wali-siswa/by-akun/{id}", response_model=schemas.WaliSiswaOut, tags=["Wali Siswa"])
+def get_wali_by_akun(id: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+    if current_user.role == models.RoleEnum.wali_siswa and current_user.id != id:
         raise HTTPException(status_code=403, detail="Akses ditolak")
-    obj = crud.get_wali_siswa_by_akun(db, id_akun)
+    obj = crud.get_wali_siswa_by_akun(db, id)
     if not obj:
         raise HTTPException(status_code=404, detail="Data wali tidak ditemukan")
     return obj
@@ -606,7 +606,7 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
     if not crud.get_akun(db, data.id_penerima):
         raise HTTPException(status_code=404, detail="Penerima tidak ditemukan")
     pesan = models.Pesan(
-        id_pengirim=current_user.id_akun,
+        id_pengirim=current_user.id,
         id_penerima=data.id_penerima,
         isi_pesan=data.isi_pesan.strip(),
         status=models.StatusPesanEnum.terkirim,
@@ -646,7 +646,7 @@ def get_riwayat_percakapan(
     from fastapi.responses import Response as FastAPIResponse
     import json as _json
 
-    if current_user.id_akun not in (id_a, id_b):
+    if current_user.id not in (id_a, id_b):
         raise HTTPException(status_code=403, detail="Akses ditolak")
 
     kedua_arah = or_(
@@ -664,10 +664,10 @@ def get_riwayat_percakapan(
 
     # ── Tandai pesan dari lawan sebagai "diterima" (hanya saat fetch awal) ────
     if before_id is None:
-        lawan_id = id_b if current_user.id_akun == id_a else id_a
+        lawan_id = id_b if current_user.id == id_a else id_a
         db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == lawan_id,
-            models.Pesan.id_penerima == current_user.id_akun,
+            models.Pesan.id_penerima == current_user.id,
             models.Pesan.status == models.StatusPesanEnum.terkirim,
         ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
         db.commit()
@@ -704,25 +704,25 @@ def get_riwayat_percakapan(
 def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     db.query(models.Pesan).filter(
         models.Pesan.id_pengirim == data.id_pengirim,
-        models.Pesan.id_penerima == current_user.id_akun,
+        models.Pesan.id_penerima == current_user.id,
         models.Pesan.status == models.StatusPesanEnum.diterima,
     ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
     db.commit()
     return {"message": "Pesan ditandai dibaca"}
 
 
-@app.get("/pesan/percakapan/{id_akun}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])
-def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
-    if current_user.id_akun != id_akun:
+@app.get("/pesan/percakapan/{id}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])
+def get_daftar_percakapan(id: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+    if current_user.id != id:
         raise HTTPException(status_code=403, detail="Akses ditolak")
     semua_pesan = (
         db.query(models.Pesan)
-        .filter(or_(models.Pesan.id_pengirim == id_akun, models.Pesan.id_penerima == id_akun))
+        .filter(or_(models.Pesan.id_pengirim == id, models.Pesan.id_penerima == id))
         .order_by(models.Pesan.waktu.desc()).all()
     )
     hasil, sudah = [], set()
     for p in semua_pesan:
-        lawan_id = p.id_penerima if p.id_pengirim == id_akun else p.id_pengirim
+        lawan_id = p.id_penerima if p.id_pengirim == id else p.id_pengirim
         if lawan_id in sudah:
             continue
         sudah.add(lawan_id)
@@ -733,7 +733,7 @@ def get_daftar_percakapan(id_akun: int, db: Session = Depends(get_db), current_u
         nama_siswa = wali.siswa.nama_siswa if wali and wali.siswa else None
         belum_dibaca = db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == lawan_id,
-            models.Pesan.id_penerima == id_akun,
+            models.Pesan.id_penerima == id,
             models.Pesan.status.in_([models.StatusPesanEnum.terkirim, models.StatusPesanEnum.diterima]),
         ).count()
         hasil.append(schemas.PercakapanItem(
@@ -760,14 +760,14 @@ def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = De
         pesan_terakhir = (
             db.query(models.Pesan)
             .filter(or_(
-                and_(models.Pesan.id_pengirim == current_user.id_akun, models.Pesan.id_penerima == gid),
-                and_(models.Pesan.id_pengirim == gid, models.Pesan.id_penerima == current_user.id_akun),
+                and_(models.Pesan.id_pengirim == current_user.id, models.Pesan.id_penerima == gid),
+                and_(models.Pesan.id_pengirim == gid, models.Pesan.id_penerima == current_user.id),
             ))
             .order_by(models.Pesan.waktu.desc()).first()
         )
         belum = db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == gid,
-            models.Pesan.id_penerima == current_user.id_akun,
+            models.Pesan.id_penerima == current_user.id,
             models.Pesan.status == models.StatusPesanEnum.diterima,
         ).count()
         hasil.append(schemas.GuruListItem(
@@ -787,7 +787,7 @@ def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = De
 def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     allowed_kelas = crud.decode_id_kelas(guru.id_kelas)  # [] jika NULL
     return [
         schemas.WaliListItem(
@@ -808,7 +808,7 @@ def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = De
 def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     _cek_guru_akses_kelas(guru, id_kelas)
     if not crud.get_kelas(db, id_kelas):
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
@@ -842,7 +842,7 @@ def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db
 def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     _cek_guru_akses_kelas(guru, payload.id_kelas)
     hasil = []
     for item in payload.data:
@@ -946,7 +946,7 @@ def get_laporan_otomatis_kelas(
 ):
     is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
     if not is_admin:
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         _cek_guru_akses_kelas(guru, id_kelas)
     result = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
     if not result:
@@ -968,7 +968,7 @@ def get_laporan_catatan(
     # ✅ Admin/kepsek tidak perlu cek guru & akses kelas
     is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
     if not is_admin:
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         _cek_guru_akses_kelas(guru, id_kelas)
 
     result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
@@ -990,7 +990,7 @@ def buat_catatan(
 ):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     catatan = crud.create_catatan_harian(db, payload, guru.id_guru)
     # Kirim notifikasi catatan ke wali yang relevan + WebSocket event
     crud.kirim_notif_catatan(db, catatan, current_user.nama)
@@ -1003,7 +1003,7 @@ def get_catatan_siswa(id_siswa: int, skip=0, limit=20, db: Session = Depends(get
     if not siswa:
         raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
     if current_user.role == models.RoleEnum.wali_siswa:
-        wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        wali = crud.get_wali_siswa_by_akun(db, current_user.id)
         if not wali or wali.id_siswa != id_siswa:
             raise HTTPException(status_code=403, detail="Anda hanya dapat melihat catatan anak Anda")
     catatan_list = crud.get_catatan_by_siswa(db, id_siswa, siswa.id_kelas, skip, limit)
@@ -1014,7 +1014,7 @@ def get_catatan_siswa(id_siswa: int, skip=0, limit=20, db: Session = Depends(get
 def get_catatan_by_guru_login(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     catatan_list = crud.get_catatan_by_guru(db, guru.id_guru, skip, limit)
     return schemas.CatatanListResponse(total=len(catatan_list), data=[crud._build_catatan_out(c) for c in catatan_list])
 
@@ -1025,7 +1025,7 @@ def get_catatan_detail(id_catatan: int, db: Session = Depends(get_db), current_u
     if not catatan:
         raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
     if current_user.role == models.RoleEnum.wali_siswa:
-        wali  = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+        wali  = crud.get_wali_siswa_by_akun(db, current_user.id)
         siswa = crud.get_siswa(db, wali.id_siswa) if wali and wali.id_siswa else None
         visible = (
             catatan.target == models.TargetCatatanEnum.semua_kelas or
@@ -1044,7 +1044,7 @@ def update_catatan(id_catatan: int, payload: schemas.CatatanHarianUpdate, db: Se
     catatan = crud.get_catatan_harian(db, id_catatan)
     if not catatan:
         raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     if catatan.id_guru != guru.id_guru:
         raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
     return crud._build_catatan_out(crud.update_catatan_harian(db, id_catatan, payload))
@@ -1056,7 +1056,7 @@ def delete_catatan(id_catatan: int, db: Session = Depends(get_db), current_user:
     if not catatan:
         raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
     if current_user.role == models.RoleEnum.guru:
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         if catatan.id_guru != guru.id_guru:
             raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
     elif current_user.role != models.RoleEnum.admin:
@@ -1072,7 +1072,7 @@ async def upload_foto_catatan(id_catatan: int, file: UploadFile = File(...), db:
     catatan = crud.get_catatan_harian(db, id_catatan)
     if not catatan:
         raise HTTPException(status_code=404, detail="Catatan tidak ditemukan")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     if catatan.id_guru != guru.id_guru:
         raise HTTPException(status_code=403, detail="Anda bukan pembuat catatan ini")
     if catatan.foto:
@@ -1093,14 +1093,14 @@ async def upload_foto_catatan(id_catatan: int, file: UploadFile = File(...), db:
 @app.get("/notifikasi/", response_model=schemas.NotifikasiListResponse, tags=["Notifikasi"])
 def get_notifikasi(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     return schemas.NotifikasiListResponse(
-        total_belum_dibaca=crud.count_notif_belum_dibaca(db, current_user.id_akun),
-        data=crud.get_notifikasi_by_akun(db, current_user.id_akun, skip, limit),
+        total_belum_dibaca=crud.count_notif_belum_dibaca(db, current_user.id),
+        data=crud.get_notifikasi_by_akun(db, current_user.id, skip, limit),
     )
 
 
 @app.put("/notifikasi/baca", tags=["Notifikasi"])
 def tandai_notif_dibaca(payload: schemas.BacaNotifRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
-    jumlah = crud.tandai_notif_dibaca(db, current_user.id_akun, payload.id_notif)
+    jumlah = crud.tandai_notif_dibaca(db, current_user.id, payload.id_notif)
     return {"message": f"{jumlah} notifikasi ditandai sudah dibaca", "jumlah": jumlah}
 
 
@@ -1113,7 +1113,7 @@ def tandai_notif_dibaca(payload: schemas.BacaNotifRequest, db: Session = Depends
 def buat_laporan(payload: schemas.LaporanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat laporan")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     # Validasi kelas ada dan guru memiliki akses ke kelas tersebut
     kelas = db.get(models.Kelas, payload.id_kelas)
     if not kelas:
@@ -1127,7 +1127,7 @@ def buat_laporan(payload: schemas.LaporanCreate, db: Session = Depends(get_db), 
 def list_laporan_guru(skip: int = 0, limit: int = 50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     data = crud.get_laporan_by_guru(db, guru.id_guru, skip, limit)
     stat = crud._hitung_statistik_laporan(data)
     return schemas.LaporanListResponse(**stat, data=[crud._build_laporan_out(l) for l in data])
@@ -1152,7 +1152,7 @@ def get_laporan_absensi(
 ):
     if tanggal_awal > tanggal_akhir:
         raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
-    guru = _get_guru_or_403(db, current_user.id_akun)
+    guru = _get_guru_or_403(db, current_user.id)
     _cek_guru_akses_kelas(guru, id_kelas)
     result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not result:
@@ -1185,7 +1185,7 @@ def download_pdf_absensi(
             raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     else:
         # Guru: tetap cek akses kelas seperti semula
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         _cek_guru_akses_kelas(guru, id_kelas)
 
     data = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
@@ -1221,7 +1221,7 @@ def download_pdf_catatan(
     if not siswa:
         raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
     if not is_admin:
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         if siswa.id_kelas is not None:
             _cek_guru_akses_kelas(guru, siswa.id_kelas)
 
@@ -1264,7 +1264,7 @@ def list_laporan_wali(
     if current_user.role != models.RoleEnum.wali_siswa:
         raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
  
-    wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+    wali = crud.get_wali_siswa_by_akun(db, current_user.id)
     if not wali or not wali.id_siswa:
         raise HTTPException(status_code=404, detail="Data wali atau siswa tidak ditemukan")
  
@@ -1312,7 +1312,7 @@ def wali_download_pdf_absensi(
         raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
  
     # Pastikan kelas yang diminta adalah kelas anak wali ini
-    wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+    wali = crud.get_wali_siswa_by_akun(db, current_user.id)
     if not wali or not wali.id_siswa:
         raise HTTPException(status_code=404, detail="Data wali tidak ditemukan")
     siswa = db.get(models.Siswa, wali.id_siswa)
@@ -1360,7 +1360,7 @@ def wali_download_pdf_catatan(
     if current_user.role != models.RoleEnum.wali_siswa:
         raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
  
-    wali = crud.get_wali_siswa_by_akun(db, current_user.id_akun)
+    wali = crud.get_wali_siswa_by_akun(db, current_user.id)
     if not wali or wali.id_siswa != id_siswa:
         raise HTTPException(status_code=403, detail="Akses ditolak ke data siswa ini")
  
@@ -1404,7 +1404,7 @@ def get_laporan_detail(id_laporan: int, db: Session = Depends(get_db), current_u
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
     if current_user.role == models.RoleEnum.guru:
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         if lap.id_guru != guru.id_guru:
             raise HTTPException(status_code=403, detail="Akses ditolak")
     return crud._build_laporan_out(lap)
@@ -1416,7 +1416,7 @@ def hapus_laporan(id_laporan: int, db: Session = Depends(get_db), current_user: 
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
     if current_user.role == models.RoleEnum.guru:
-        guru = _get_guru_or_403(db, current_user.id_akun)
+        guru = _get_guru_or_403(db, current_user.id)
         if lap.id_guru != guru.id_guru:
             raise HTTPException(status_code=403, detail="Anda bukan pembuat laporan ini")
     elif current_user.role != models.RoleEnum.admin:
@@ -1787,18 +1787,18 @@ app.include_router(router_laporan)
 
 # ─── WebSocket ────────────────────────────────────────────────────────────────
 
-@app.websocket("/ws/{id_akun}")
-async def websocket_endpoint(websocket: WebSocket, id_akun: int, token: str):
+@app.websocket("/ws/{id}")
+async def websocket_endpoint(websocket: WebSocket, id: int, token: str):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        if payload.get("id_akun") != id_akun:
+        if payload.get("id") != id:
             await websocket.close(code=4001)
             return
     except jwt.PyJWTError:
         await websocket.close(code=4001)
         return
 
-    await ws_manager.connect(id_akun, websocket)
+    await ws_manager.connect(id, websocket)
     try:
         while True:
             data = await asyncio.wait_for(
@@ -1807,7 +1807,7 @@ async def websocket_endpoint(websocket: WebSocket, id_akun: int, token: str):
     except (WebSocketDisconnect, asyncio.TimeoutError, Exception):
         pass
     finally:
-        ws_manager.disconnect(id_akun, websocket)
+        ws_manager.disconnect(id, websocket)
 
 
 if __name__ == "__main__":

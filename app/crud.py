@@ -50,8 +50,8 @@ def authenticate_akun(db: Session, username: str, password: str) -> Optional[mod
 
 # ─── Akun ─────────────────────────────────────────────────────────────────────
 
-def get_akun(db: Session, id_akun: int) -> Optional[models.Akun]:
-    return db.get(models.Akun, id_akun)
+def get_akun(db: Session, id: int) -> Optional[models.Akun]:
+    return db.get(models.Akun, id)
 
 def get_akun_by_username(db: Session, username: str) -> Optional[models.Akun]:
     return db.query(models.Akun).filter(models.Akun.username == username).first()
@@ -70,24 +70,24 @@ def create_akun(db: Session, akun: schemas.AkunCreate) -> models.Akun:
     db.add(obj)
     return _commit_refresh(db, obj)
 
-def update_akun(db: Session, id_akun: int, data: schemas.AkunUpdate) -> Optional[models.Akun]:
-    obj = get_akun(db, id_akun)
+def update_akun(db: Session, id: int, data: schemas.AkunUpdate) -> Optional[models.Akun]:
+    obj = get_akun(db, id)
     if not obj:
         return None
     for k, v in data.model_dump(exclude_unset=True).items():
         setattr(obj, k, hash_password(v) if k == "password" and v else v)
     return _commit_refresh(db, obj)
 
-def delete_akun(db: Session, id_akun: int) -> bool:
-    obj = get_akun(db, id_akun)
+def delete_akun(db: Session, id: int) -> bool:
+    obj = get_akun(db, id)
     if not obj:
         return False
     db.delete(obj)
     db.commit()
     return True
 
-def force_logout_akun(db: Session, id_akun: int) -> bool:
-    obj = get_akun(db, id_akun)
+def force_logout_akun(db: Session, id: int) -> bool:
+    obj = get_akun(db, id)
     if not obj or obj.device_id is None:
         return False
     obj.device_id = None
@@ -100,9 +100,9 @@ def force_logout_akun(db: Session, id_akun: int) -> bool:
 def get_reset_password(db: Session, id_pertanyaan: int) -> Optional[models.ResetPassword]:
     return db.get(models.ResetPassword, id_pertanyaan)
 
-def get_reset_password_by_akun(db: Session, id_akun: int) -> Optional[models.ResetPassword]:
+def get_reset_password_by_akun(db: Session, id: int) -> Optional[models.ResetPassword]:
     return db.query(models.ResetPassword).filter(
-        models.ResetPassword.id_akun == id_akun).first()
+        models.ResetPassword.id_akun == id).first()
 
 def get_all_reset_password(db: Session, skip=0, limit=100):
     return db.query(models.ResetPassword).offset(skip).limit(limit).all()
@@ -129,12 +129,12 @@ def delete_reset_password(db: Session, id_pertanyaan: int) -> bool:
     db.commit()
     return True
 
-def verify_jawaban_reset(db: Session, id_akun: int, jawaban: str) -> bool:
-    obj = get_reset_password_by_akun(db, id_akun)
+def verify_jawaban_reset(db: Session, id: int, jawaban: str) -> bool:
+    obj = get_reset_password_by_akun(db, id)
     return bool(obj and obj.jawaban.strip().lower() == jawaban.strip().lower())
 
-def ganti_password(db: Session, id_akun: int, password_baru: str) -> Optional[models.Akun]:
-    obj = get_akun(db, id_akun)
+def ganti_password(db: Session, id: int, password_baru: str) -> Optional[models.Akun]:
+    obj = get_akun(db, id)
     if not obj:
         return None
     if verify_password(password_baru, obj.password):
@@ -179,8 +179,8 @@ def delete_kelas(db: Session, id_kelas: int) -> bool:
 def get_guru(db: Session, id_guru: int) -> Optional[models.Guru]:
     return db.get(models.Guru, id_guru)
 
-def get_guru_by_akun(db: Session, id_akun: int) -> Optional[models.Guru]:
-    return db.query(models.Guru).filter(models.Guru.id_akun == id_akun).first()
+def get_guru_by_akun(db: Session, id: int) -> Optional[models.Guru]:
+    return db.query(models.Guru).filter(models.Guru.id_akun == id).first()
 
 def get_guru_by_nip(db: Session, nip: str) -> Optional[models.Guru]:
     return db.query(models.Guru).filter(models.Guru.nip == nip).first()
@@ -195,7 +195,7 @@ def create_guru_with_akun(db: Session, guru: schemas.GuruCreate) -> models.Guru:
     )
     db.add(akun)
     db.flush()
-    obj = models.Guru(id_akun=akun.id_akun,
+    obj = models.Guru(id_akun=akun.id,
                       id_kelas=encode_id_kelas(guru.list_id_kelas), nip=guru.nip)
     db.add(obj)
     return _commit_refresh(db, obj)
@@ -221,8 +221,8 @@ def delete_guru(db: Session, id_guru: int) -> bool:
 
 # ─── Admin ────────────────────────────────────────────────────────────────────
 
-def get_admin_by_akun(db: Session, id_akun: int) -> Optional[models.Admin]:
-    return db.query(models.Admin).filter(models.Admin.id_akun == id_akun).first()
+def get_admin_by_akun(db: Session, id: int) -> Optional[models.Admin]:
+    return db.query(models.Admin).filter(models.Admin.id_akun == id).first()
 
 def get_all_admin(db: Session, skip=0, limit=100):
     return db.query(models.Admin).offset(skip).limit(limit).all()
@@ -234,7 +234,7 @@ def create_admin_with_akun(db: Session, data: schemas.AdminCreate) -> models.Adm
     )
     db.add(akun)
     db.flush()
-    obj = models.Admin(id_akun=akun.id_akun)
+    obj = models.Admin(id_akun=akun.id)
     db.add(obj)
     return _commit_refresh(db, obj)
 
@@ -252,9 +252,9 @@ def delete_admin(db: Session, id_admin: int) -> bool:
 def get_kepsek(db: Session, id_kepsek: int) -> Optional[models.KepalaSekolah]:
     return db.get(models.KepalaSekolah, id_kepsek)
 
-def get_kepsek_by_akun(db: Session, id_akun: int) -> Optional[models.KepalaSekolah]:
+def get_kepsek_by_akun(db: Session, id: int) -> Optional[models.KepalaSekolah]:
     return db.query(models.KepalaSekolah).filter(
-        models.KepalaSekolah.id_akun == id_akun).first()
+        models.KepalaSekolah.id_akun == id).first()
 
 def get_kepsek_by_nip(db: Session, nip: str) -> Optional[models.KepalaSekolah]:
     return db.query(models.KepalaSekolah).filter(models.KepalaSekolah.nip == nip).first()
@@ -269,7 +269,7 @@ def create_kepsek_with_akun(db: Session, data: schemas.KepsekCreate) -> models.K
     )
     db.add(akun)
     db.flush()
-    obj = models.KepalaSekolah(id_akun=akun.id_akun, nip=data.nip)
+    obj = models.KepalaSekolah(id_akun=akun.id, nip=data.nip)
     db.add(obj)
     return _commit_refresh(db, obj)
 
@@ -309,7 +309,7 @@ def create_siswa_with_wali(db: Session, data: schemas.SiswaCreate) -> models.Sis
     db.add(akun)
     db.flush()
 
-    wali = models.WaliSiswa(id_akun=akun.id_akun,
+    wali = models.WaliSiswa(id_akun=akun.id,
                             no_hp_telp=data.no_hp_telp, alamat=data.alamat)
     db.add(wali)
     db.flush()
@@ -352,8 +352,8 @@ def delete_siswa(db: Session, id_siswa: int) -> bool:
 def get_wali_siswa(db: Session, id_wali_siswa: int) -> Optional[models.WaliSiswa]:
     return db.get(models.WaliSiswa, id_wali_siswa)
 
-def get_wali_siswa_by_akun(db: Session, id_akun: int) -> Optional[models.WaliSiswa]:
-    return db.query(models.WaliSiswa).filter(models.WaliSiswa.id_akun == id_akun).first()
+def get_wali_siswa_by_akun(db: Session, id: int) -> Optional[models.WaliSiswa]:
+    return db.query(models.WaliSiswa).filter(models.WaliSiswa.id_akun == id).first()
 
 def update_wali_siswa(db: Session, id_wali_siswa: int,
                       data: schemas.WaliSiswaUpdate) -> Optional[models.WaliSiswa]:
@@ -460,10 +460,10 @@ def delete_absensi(db: Session, id_absensi: int) -> bool:
 
 # ─── Notifikasi ───────────────────────────────────────────────────────────────
 
-def _buat_notif(db: Session, id_akun: int, judul: str, pesan: str,
+def _buat_notif(db: Session, id: int, judul: str, pesan: str,
                 tipe: models.TipeNotifEnum, ref_id: int) -> models.Notifikasi:
     """Buat satu baris notifikasi tanpa commit."""
-    obj = models.Notifikasi(id_akun=id_akun, judul=judul, pesan=pesan,
+    obj = models.Notifikasi(id_akun=id, judul=judul, pesan=pesan,
                             tipe=tipe, ref_id=ref_id)
     db.add(obj)
     return obj
@@ -637,21 +637,21 @@ def kirim_notif_catatan(
 
     db.flush() 
 
-def get_notifikasi_by_akun(db: Session, id_akun: int,
+def get_notifikasi_by_akun(db: Session, id: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:
-    return (db.query(models.Notifikasi).filter(models.Notifikasi.id_akun == id_akun)
+    return (db.query(models.Notifikasi).filter(models.Notifikasi.id_akun == id)
             .order_by(models.Notifikasi.tanggal.desc()).offset(skip).limit(limit).all())
 
-def count_notif_belum_dibaca(db: Session, id_akun: int) -> int:
+def count_notif_belum_dibaca(db: Session, id: int) -> int:
     return (db.query(models.Notifikasi)
-            .filter(models.Notifikasi.id_akun == id_akun,
+            .filter(models.Notifikasi.id_akun == id,
                     models.Notifikasi.status == models.StatusNotifEnum.belum_dibaca)
             .count())
 
-def tandai_notif_dibaca(db: Session, id_akun: int,
+def tandai_notif_dibaca(db: Session, id: int,
                         id_notif: Optional[int] = None) -> int:
     q = db.query(models.Notifikasi).filter(
-        models.Notifikasi.id_akun == id_akun,
+        models.Notifikasi.id_akun == id,
         models.Notifikasi.status == models.StatusNotifEnum.belum_dibaca,
     )
     if id_notif is not None:

@@ -61,7 +61,7 @@ class AkunCreateWithRole(BaseModel):
     nip:      Optional[str] = Field(None, max_length=20, example="196501011990031001")
 
 class AkunOut(AkunBase):
-    id_akun:     int
+    id:          int
     first_login: bool
     device_id:   Optional[str] = None 
     created_at:  Optional[datetime] = None
@@ -81,7 +81,7 @@ class ResetPasswordBase(BaseModel):
     jawaban:        str = Field(..., max_length=50, example="Kucingku")
 
 class ResetPasswordCreate(ResetPasswordBase):
-    id_akun: int
+    id: int
 
 class ResetPasswordUpdate(BaseModel):
     isi_pertanyaan: Optional[str] = Field(None, max_length=50)
@@ -89,17 +89,17 @@ class ResetPasswordUpdate(BaseModel):
 
 class ResetPasswordOut(ResetPasswordBase):
     id_pertanyaan: int
-    id_akun:       int
+    id:            int
 
     class Config:
         from_attributes = True
 
 class VerifyJawabanRequest(BaseModel):
-    id_akun: int
+    id: int
     jawaban: str = Field(..., example="Kucingku")
 
 class GantiPasswordRequest(BaseModel):
-    id_akun:       int
+    id:            int
     jawaban:       str = Field(..., example="Kucingku")
     password_baru: str = Field(..., example="passwordbaru123")
 
@@ -150,7 +150,7 @@ class AdminCreate(BaseModel):
 
 class AdminOut(BaseModel):
     id_admin: int
-    id_akun:  int
+    id:       int
     akun:     Optional[AkunOut] = None
 
     class Config:
@@ -169,7 +169,7 @@ class KepsekUpdate(BaseModel):
 
 class KepsekOut(BaseModel):
     id_kepsek: int
-    id_akun:   int
+    id:        int
     nip:       Optional[str] = None
     akun:      Optional[AkunOut] = None
 
@@ -196,7 +196,7 @@ class SiswaSimpleOut(BaseModel):
 
 class WaliSiswaOut(BaseModel):
     id_wali_siswa: int
-    id_akun:       int
+    id:            int
     id_siswa:      Optional[int] = None
     no_hp_telp:    Optional[str] = None
     alamat:        Optional[str] = None
@@ -292,7 +292,7 @@ class GuruListItem(BaseModel):
     
 class GuruOut(BaseModel):
     id_guru:       int
-    id_akun:       int
+    id:            int
     nip:           Optional[str]       = None
     list_id_kelas: Optional[List[int]] = None
     akun:          Optional[AkunOut]   = None
@@ -498,7 +498,7 @@ class StatusNotifEnum(str, Enum):
 class NotifikasiOut(BaseModel):
     """Response satu item notifikasi."""
     id_notif : int
-    id_akun  : int
+    id       : int
     judul    : str
     pesan    : str
     tipe     : TipeNotifEnum

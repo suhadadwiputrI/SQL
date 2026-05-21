@@ -252,7 +252,7 @@ class Notifikasi(Base):
 
 class StatusLaporanEnum(str, enum.Enum):
     menunggu_verifikasi = "menunggu_verifikasi"
-    terverifikasi       = "terverifikasi"
+    verifikasi       = "verifikasi"
 
 
 class JenisLaporanEnum(str, enum.Enum):

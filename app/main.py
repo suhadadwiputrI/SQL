@@ -345,21 +345,21 @@ def get_pertanyaan_by_akun(id: int, db: Session = Depends(get_db)):
 
 @app.post("/reset-password/verify", tags=["Reset Password"])
 def verify_jawaban(payload: schemas.VerifyJawabanRequest, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, payload.id):
+    if not crud.get_akun(db, payload.id_akun):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    if not crud.verify_jawaban_reset(db, payload.id, payload.jawaban):
+    if not crud.verify_jawaban_reset(db, payload.id_akun, payload.jawaban):
         raise HTTPException(status_code=400, detail="Jawaban keamanan salah")
     return {"message": "Jawaban benar. Silakan ganti password."}
 
 
 @app.post("/reset-password/ganti-password", response_model=schemas.AkunOut, tags=["Reset Password"])
 def ganti_password(payload: schemas.GantiPasswordRequest, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, payload.id):
+    if not crud.get_akun(db, payload.id_akun):
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    if not crud.verify_jawaban_reset(db, payload.id, payload.jawaban):
+    if not crud.verify_jawaban_reset(db, payload.id_akun, payload.jawaban):
         raise HTTPException(status_code=400, detail="Jawaban keamanan salah")
     try:
-        akun = crud.ganti_password(db, payload.id, payload.password_baru)
+        akun = crud.ganti_password(db, payload.id_akun, payload.password_baru)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     return akun
@@ -1433,7 +1433,7 @@ def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: 
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
     # Kirim notifikasi ke semua wali siswa di kelas laporan
-    if lap.status == models.StatusLaporanEnum.terverifikasi:
+    if lap.status == models.StatusLaporanEnum.verifikasi:
         try:
             crud.kirim_notif_laporan_terverifikasi(db, lap)
         except Exception as e:

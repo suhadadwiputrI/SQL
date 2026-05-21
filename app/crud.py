@@ -892,9 +892,16 @@ def verifikasi_laporan(
 
     if not obj:
         return None
-    obj.status         = data.status
-    obj.keterangan     = data.keterangan
-    return _commit_refresh(db, obj)
+    obj.status     = data.status
+    obj.keterangan = data.keterangan if data.keterangan else None
+    try:
+        db.commit()
+        db.refresh(obj)
+    except Exception as e:
+        db.rollback()
+        raise e
+    return obj
+
 
 def kirim_notif_laporan_terverifikasi(
     db: Session,
@@ -960,7 +967,7 @@ def kirim_notif_laporan_terverifikasi(
             except RuntimeError:
                 pass
 
-    db.commit()  # Bug #1 fix: flush() → commit() agar notifikasi benar-benar tersimpan
+    db.flush()  # flush notifikasi ke DB dalam transaksi yang sama
 
 
 def delete_laporan(db: Session, id_laporan: int) -> bool:

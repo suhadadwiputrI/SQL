@@ -878,26 +878,24 @@ def create_laporan(
     db.add(obj)
     return _commit_refresh(db, obj)
 
-
 def verifikasi_laporan(
     db: Session,
     id_laporan: int,
     data: schemas.LaporanVerifikasi,
 ) -> Optional[models.Laporan]:
-    """
-    Admin memverifikasi laporan.
-    - status       : diperbarui ke nilai dari request ('terverifikasi')
-    - keterangan   : catatan admin (boleh None)
-    - tanggal_dibuat: di-update ke hari ini agar mencatat tanggal verifikasi
-    """
-    obj = get_laporan(db, id_laporan)
+    from sqlalchemy.orm import joinedload
+
+    obj = db.query(models.Laporan).options(
+        joinedload(models.Laporan.kelas),
+        joinedload(models.Laporan.guru).joinedload(models.Guru.akun),
+    ).filter(models.Laporan.id_laporan == id_laporan).first()
+
     if not obj:
         return None
     obj.status         = data.status
     obj.keterangan     = data.keterangan
-    obj.tanggal_dibuat = date.today()          # update tanggal saat diverifikasi
+    obj.tanggal_dibuat = date.today()
     return _commit_refresh(db, obj)
-
 
 def kirim_notif_laporan_terverifikasi(
     db: Session,
@@ -976,22 +974,27 @@ def delete_laporan(db: Session, id_laporan: int) -> bool:
 
 
 def _build_laporan_out(lap: models.Laporan) -> schemas.LaporanOut:
-    """
-    Bangun LaporanOut dari ORM object.
-    nama_kelas diambil dari relasi lap.kelas (bukan kolom langsung di tabel laporan).
-    """
+    try:
+        nama_guru = lap.guru.akun.nama if lap.guru and lap.guru.akun else None
+    except Exception:
+        nama_guru = None
+    try:
+        nama_kelas = lap.kelas.nama_kelas if lap.kelas else None
+    except Exception:
+        nama_kelas = None
+
     return schemas.LaporanOut(
         id_laporan     = lap.id_laporan,
         id_kelas       = lap.id_kelas,
         id_guru        = lap.id_guru,
         periode        = lap.periode,
         tanggal_dibuat = lap.tanggal_dibuat,
-        jenis_laporan  = lap.jenis_laporan, 
+        jenis_laporan  = lap.jenis_laporan,
         status         = lap.status,
         keterangan     = lap.keterangan,
         created_at     = lap.created_at,
-        nama_kelas     = lap.kelas.nama_kelas if lap.kelas else None,
-        nama_guru      = lap.guru.akun.nama if lap.guru and lap.guru.akun else None,
+        nama_kelas     = nama_kelas,
+        nama_guru      = nama_guru,
     )
 
 

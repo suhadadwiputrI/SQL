@@ -553,6 +553,38 @@ def create_siswa(data: schemas.SiswaCreate, db: Session = Depends(get_db), _=Dep
 def list_siswa(skip=0, limit=100, db: Session = Depends(get_db), _=Depends(require_admin)):
     return crud.get_all_siswa(db, skip, limit)
 
+@app.get("/siswa/kelas/{id_kelas}", response_model=List[schemas.SiswaOut], tags=["Siswa"])
+def get_siswa_by_kelas(
+    id_kelas: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    """
+    Ambil daftar siswa berdasarkan kelas.
+    Dapat diakses oleh: admin, kepala_sekolah, dan guru (yang punya akses ke kelas tersebut).
+    """
+    # Validasi kelas ada
+    if not crud.get_kelas(db, id_kelas):
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+ 
+    # Cek akses berdasarkan role
+    if current_user.role == models.RoleEnum.guru:
+        guru = _get_guru_or_403(db, current_user.id)
+        _cek_guru_akses_kelas(guru, id_kelas)
+    elif current_user.role not in (
+        models.RoleEnum.admin,
+        models.RoleEnum.kepala_sekolah,
+    ):
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+ 
+    siswa_list = (
+        db.query(models.Siswa)
+        .filter(models.Siswa.id_kelas == id_kelas)
+        .order_by(models.Siswa.nama_siswa)
+        .all()
+    )
+    return siswa_list
+
 
 @app.get("/siswa/{id_siswa}", response_model=schemas.SiswaOut, tags=["Siswa"])
 def get_siswa(id_siswa: int, db: Session = Depends(get_db), _=Depends(get_current_user)):

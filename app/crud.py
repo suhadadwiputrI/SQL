@@ -471,7 +471,13 @@ def _buat_notif(db: Session, id: int, judul: str, pesan: str,
 def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
                       id_pesan: int, payload_ws: dict = None) -> models.Notifikasi:
     from app.websocket_manager import ws_manager
-    notif = _buat_notif(db, id_akun_penerima, "Pesan Baru",
+    # FIX-4: Gunakan judul "Pesan dari {nama}" bukan "Pesan Baru".
+    # Android meng-inject notif lokal via WebSocket dengan judul "Pesan dari {nama}",
+    # lalu saat API di-poll, server mengembalikan judul "Pesan Baru" → judul berbeda
+    # → NotifikasiAdapter.dedup() dan mergeWithInjected() tidak bisa mencocokkan
+    # keduanya → item duplikat muncul di list notifikasi.
+    # Samakan judul agar dedup berjalan benar.
+    notif = _buat_notif(db, id_akun_penerima, f"Pesan dari {nama_pengirim}",
                         f"Pesan baru dari {nama_pengirim}",
                         models.TipeNotifEnum.pesan, id_pesan)
     db.commit()

@@ -641,7 +641,13 @@ def kirim_notif_catatan(
             except RuntimeError:
                 pass
 
-    db.flush() 
+    # [FIX] flush() → commit() agar notifikasi catatan benar-benar tersimpan ke database.
+    # flush() hanya mengirim SQL ke buffer tanpa COMMIT — saat session ditutup oleh get_db(),
+    # semua perubahan yang hanya di-flush akan di-rollback otomatis oleh engine.
+    # Akibatnya baris notifikasi tidak pernah muncul di tabel notifikasi meskipun
+    # _buat_notif() berhasil dipanggil. Sama seperti fix yang sudah dilakukan
+    # di kirim_notif_absensi_batch (flush → commit).
+    db.commit()
 
 def get_notifikasi_by_akun(db: Session, id: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:

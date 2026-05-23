@@ -486,9 +486,7 @@ def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
     if payload_ws and ws_manager.aktif(id_akun_penerima):
         try:
             loop = asyncio.get_running_loop()
-            loop.call_soon_threadsafe(
-                loop.create_task,
-                ws_manager.kirim_ke_akun(id_akun_penerima, payload_ws))
+            loop.create_task(ws_manager.kirim_ke_akun(id_akun_penerima, payload_ws))
         except RuntimeError:
             pass
     return notif
@@ -547,10 +545,7 @@ def kirim_notif_absensi_batch(
             }
             try:
                 loop = asyncio.get_running_loop()
-                if loop.is_running():
-                    loop.call_soon_threadsafe(
-                        loop.create_task,
-                        ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
 
@@ -635,19 +630,115 @@ def kirim_notif_catatan(
             }
             try:
                 loop = asyncio.get_running_loop()
-                loop.call_soon_threadsafe(
-                    loop.create_task,
-                    ws_manager.kirim_ke_akun(wali.id_akun, payload))
+                loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
-
-    # [FIX] flush() → commit() agar notifikasi catatan benar-benar tersimpan ke database.
-    # flush() hanya mengirim SQL ke buffer tanpa COMMIT — saat session ditutup oleh get_db(),
-    # semua perubahan yang hanya di-flush akan di-rollback otomatis oleh engine.
-    # Akibatnya baris notifikasi tidak pernah muncul di tabel notifikasi meskipun
-    # _buat_notif() berhasil dipanggil. Sama seperti fix yang sudah dilakukan
-    # di kirim_notif_absensi_batch (flush → commit).
     db.commit()
+    
+def kirim_notif_laporan_terverifikasi(
+    db: "Session",
+    laporan: "models.Laporan",
+    nama_admin: str,
+) -> None:
+    """
+    Dipanggil dari endpoint verifikasi laporan (main.py) SETELAH
+    verifikasi_laporan() berhasil dan status == 'verifikasi'.
+ 
+    Alur:
+    1. Ambil semua siswa di kelas laporan (lap.id_kelas).
+    2. Untuk setiap siswa yang punya wali, buat baris Notifikasi
+       dengan tipe='laporan' ke akun wali.
+    3. Kirim WebSocket event 'laporan_verified' ke wali yang online,
+       dengan payload:
+         {
+           "type": "laporan_verified",
+           "data": {
+             "id_laporan"   : int,
+             "jenis_laporan": "absensi" | "catatan",
+             "periode"      : str,
+             "nama_guru"    : str,       ← nama guru pembuat laporan
+             "nama_admin"   : str,       ← nama admin yang verifikasi
+             "keterangan"   : str | null,
+             "tanggal"      : str        ← ISO timestamp
+           }
+         }
+ 
+    Dipanggil hanya jika payload.status == 'verifikasi'
+    (bukan saat status kembali ke menunggu_verifikasi).
+    """
+    from app.websocket_manager import ws_manager
+    from app import models
+ 
+    # Laporan harus punya id_kelas agar tahu ke wali mana notif dikirim
+    if laporan.id_kelas is None:
+        return
+ 
+    # Ambil nama guru dari relasi (sudah joinedload di verifikasi_laporan)
+    try:
+        nama_guru = laporan.guru.akun.nama if laporan.guru and laporan.guru.akun else "Guru"
+    except Exception:
+        nama_guru = "Guru"
+ 
+    jenis = laporan.jenis_laporan.value if laporan.jenis_laporan else "absensi"
+    label_jenis = "Absensi" if jenis == "absensi" else "Catatan Harian"
+ 
+    # Ambil semua siswa di kelas ini yang memiliki wali
+    siswa_list = (
+        db.query(models.Siswa)
+        .filter(
+            models.Siswa.id_kelas == laporan.id_kelas,
+            models.Siswa.id_wali_siswa.isnot(None),
+        )
+        .all()
+    )
+    if not siswa_list:
+        return
+ 
+    id_wali_set = {s.id_wali_siswa for s in siswa_list}
+    wali_map = {
+        w.id_wali_siswa: w
+        for w in db.query(models.WaliSiswa)
+        .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set))
+        .all()
+    }
+ 
+    # Timestamp sekarang (WIB string)
+    from datetime import datetime, timezone, timedelta
+    now_wib = datetime.now(timezone(timedelta(hours=7)))
+    tanggal_str = now_wib.strftime("%Y-%m-%dT%H:%M:%S")
+ 
+    payload_data = {
+        "id_laporan"   : laporan.id_laporan,
+        "jenis_laporan": jenis,
+        "periode"      : laporan.periode,
+        "nama_guru"    : nama_guru,
+        "nama_admin"   : nama_admin,
+        "keterangan"   : laporan.keterangan,
+        "tanggal"      : tanggal_str,
+    }
+    ws_payload = {"type": "laporan_verified", "data": payload_data}
+ 
+    for id_ws, wali in wali_map.items():
+        # Simpan notifikasi ke database
+        _buat_notif(
+            db,
+            wali.id_akun,
+            f"Laporan {label_jenis} Tersedia",
+            f"Laporan {label_jenis} periode {laporan.periode} "
+            f"oleh {nama_guru} telah diverifikasi.",
+            models.TipeNotifEnum.laporan,
+            laporan.id_laporan,
+        )
+ 
+        # Kirim WebSocket ke wali yang sedang online
+        if ws_manager.aktif(wali.id_akun):
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, ws_payload))
+            except RuntimeError:
+                pass
+ 
+    db.commit()    
 
 def get_notifikasi_by_akun(db: Session, id: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:

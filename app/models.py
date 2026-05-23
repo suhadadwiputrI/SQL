@@ -225,6 +225,7 @@ class TipeNotifEnum(str, enum.Enum):
     pesan    = "pesan"
     absensi  = "absensi"
     catatan  = "catatan"
+    laporan  = "laporan"
 
 
 class StatusNotifEnum(str, enum.Enum):

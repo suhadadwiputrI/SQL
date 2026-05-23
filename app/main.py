@@ -1350,16 +1350,35 @@ def hapus_laporan(id_laporan: int, db: Session = Depends(get_db), current_user: 
     return {"message": f"Laporan {id_laporan} berhasil dihapus"}
 
 
-@router_laporan.put("/{id_laporan}/verifikasi", response_model=schemas.LaporanOut, summary="Admin memverifikasi laporan (ubah status + update tanggal)")
-def verifikasi_laporan(id_laporan: int, payload: schemas.LaporanVerifikasi, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
-    if current_user.role not in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
-        raise HTTPException(status_code=403, detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan")
+@router_laporan.put("/{id_laporan}/verifikasi")
+def verifikasi_laporan(
+    id_laporan: int,
+    payload: schemas.LaporanVerifikasi,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if current_user.role not in (
+        models.RoleEnum.admin,
+        models.RoleEnum.kepala_sekolah,
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan",
+        )
+ 
     lap = crud.verifikasi_laporan(db, id_laporan, payload)
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
+ 
+    # ── Kirim notifikasi ke wali HANYA saat status menjadi 'verifikasi' ──────
+    if payload.status == models.StatusLaporanEnum.verifikasi:
+        crud.kirim_notif_laporan_terverifikasi(
+            db,
+            lap,
+            nama_admin=current_user.nama,   # nama admin yang sedang login
+        )
+ 
     return crud._build_laporan_out(lap)
-
-app.include_router(router_laporan, tags=["Laporan"])
 
 
 # ─── PDF Generator: Buku Absensi Harian Kelas ────────────────────────────────

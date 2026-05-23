@@ -1398,22 +1398,42 @@ def verifikasi_laporan(
 
     return crud._build_laporan_out(lap)
 
-@router_laporan.get("/wali/", response_model=schemas.LaporanListResponse)
+@router_laporan.get("/wali/", response_model=schemas.LaporanListResponse,
+                    summary="[WALI SISWA] Daftar laporan terverifikasi milik kelas anaknya")
 def list_laporan_wali(
-    skip: int = 0, limit: int = 200,
+    skip: int = 0,
+    limit: int = 200,
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
     if current_user.role != models.RoleEnum.wali_siswa:
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="Hanya wali siswa yang dapat mengakses")
+ 
+    # Ambil data wali → siswa → id_kelas
     wali = crud.get_wali_siswa_by_akun(db, current_user.id)
-    siswa = crud.get_siswa(db, wali.id_siswa) if wali else None
+    if not wali or not wali.id_siswa:
+        return schemas.LaporanListResponse(total=0, total_selesai=0, total_belum=0, data=[])
+ 
+    siswa = crud.get_siswa(db, wali.id_siswa)
     id_kelas = siswa.id_kelas if siswa else None
-    data = [l for l in crud.get_all_laporan(db, skip, limit)
-            if l.status == models.StatusLaporanEnum.verifikasi
-            and (id_kelas is None or l.id_kelas == id_kelas)]
+ 
+    # Ambil semua laporan, filter: sudah verifikasi + kelas sesuai siswa wali
+    semua = crud.get_all_laporan(db, skip=0, limit=1000)
+    data = [
+        l for l in semua
+        if l.status == models.StatusLaporanEnum.verifikasi
+        and (id_kelas is None or l.id_kelas == id_kelas)
+    ]
+ 
+    # Terapkan skip & limit setelah filter
+    data = data[skip: skip + limit]
+ 
     stat = crud._hitung_statistik_laporan(data)
-    return schemas.LaporanListResponse(**stat, data=[crud._build_laporan_out(l) for l in data])
+    return schemas.LaporanListResponse(
+        **stat,
+        data=[crud._build_laporan_out(l) for l in data],
+    )
+ 
 
 # =============================================================================
 # Register Router

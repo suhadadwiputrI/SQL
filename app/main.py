@@ -36,7 +36,9 @@ from app import models, schemas, crud
 from app.websocket_manager import ws_manager
 
 
-# ─── Config ───────────────────────────────────────────────────────────────────
+# =============================================================================
+# Config
+# =============================================================================
 
 SECRET_KEY                  = os.getenv("SECRET_KEY", "smartschool-secret-key-laragon-dev")
 ALGORITHM                   = "HS256"
@@ -65,7 +67,9 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 router_laporan = APIRouter(prefix="/laporan", tags=["Laporan"])
 
 
-# ─── Auth helpers ─────────────────────────────────────────────────────────────
+# =============================================================================
+# Auth Helpers
+# =============================================================================
 
 def create_access_token(data: dict) -> str:
     payload = {
@@ -96,7 +100,7 @@ def get_current_user(
     if not akun:
         raise exc
 
-    # ✅ TAMBAHAN: Cek apakah device sudah di-force logout
+    # Cek apakah device sudah di-force logout
     # Jika device_id di DB sudah NULL, akun ini sudah di-kick
     token_device_id = payload.get("device_id")
     if token_device_id and akun.device_id != token_device_id:
@@ -145,7 +149,9 @@ def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int)
             raise HTTPException(status_code=403, detail="Akses ditolak")
 
 
-# ─── Startup ──────────────────────────────────────────────────────────────────
+# =============================================================================
+# Startup
+# =============================================================================
 
 @app.on_event("startup")
 def seed_master_admin():
@@ -162,7 +168,9 @@ def seed_master_admin():
         db.close()
 
 
-# ─── Root ─────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Root
+# =============================================================================
 
 @app.get("/", tags=["Root"])
 def root():
@@ -174,7 +182,9 @@ def health():
     return {"status": "ok"}
 
 
-# ─── Auth ─────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Auth
+# =============================================================================
 
 @app.post("/auth/login", response_model=schemas.Token, tags=["Auth"])
 def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
@@ -199,7 +209,7 @@ def login(payload: schemas.LoginRequest, db: Session = Depends(get_db)):
         db.commit()
     token = create_access_token({
         "id":          akun.id,
-        "device_id": akun.device_id,
+        "device_id":   akun.device_id,
         "username":    akun.username,
         "role":        akun.role.value,
         "first_login": akun.first_login,
@@ -213,11 +223,12 @@ def logout(db: Session = Depends(get_db), current_user: models.Akun = Depends(ge
     db.commit()
     return {"message": "Logout berhasil"}
 
+
 @app.post("/akun/{id}/force-logout", tags=["Akun"])
-async def force_logout(          # ← tambah async
+async def force_logout(
     id: int,
     db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user)
+    current_user: models.Akun = Depends(get_current_user),
 ):
     if current_user.role != models.RoleEnum.admin:
         raise HTTPException(status_code=403, detail="Hanya admin yang dapat melakukan logout paksa")
@@ -227,19 +238,21 @@ async def force_logout(          # ← tambah async
     if not berhasil:
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan atau sudah offline")
 
-    await ws_manager.kirim_ke_akun(id, {   # ← tambahkan ini
+    await ws_manager.kirim_ke_akun(id, {
         "type": "force_logout",
-        "message": "Sesi Anda telah diakhiri oleh Admin."
+        "message": "Sesi Anda telah diakhiri oleh Admin.",
     })
-
     return {"message": "Logout paksa berhasil"}
+
 
 @app.get("/auth/me", tags=["Auth"])
 def me(current_user: models.Akun = Depends(get_current_user)):
     return current_user
 
 
-# ─── Akun ─────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Akun
+# =============================================================================
 
 @app.get("/akun/", response_model=List[schemas.AkunOut], tags=["Akun"])
 def list_akun(skip=0, limit=100, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -322,7 +335,9 @@ async def create_akun_with_role(request: Request, db: Session = Depends(get_db),
     raise HTTPException(status_code=400, detail="Gunakan endpoint /guru/ untuk role guru")
 
 
-# ─── Reset Password ───────────────────────────────────────────────────────────
+# =============================================================================
+# Reset Password
+# =============================================================================
 
 @app.post("/reset-password/", response_model=schemas.ResetPasswordOut, status_code=201, tags=["Reset Password"])
 def create_reset_password(rp: schemas.ResetPasswordCreate, db: Session = Depends(get_db)):
@@ -385,7 +400,9 @@ def delete_reset_password(id_pertanyaan: int, db: Session = Depends(get_db), _=D
     return {"message": f"Pertanyaan {id_pertanyaan} berhasil dihapus"}
 
 
-# ─── Kelas ────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Kelas
+# =============================================================================
 
 @app.post("/kelas/", response_model=schemas.KelasOut, status_code=201, tags=["Kelas"])
 def create_kelas(kelas: schemas.KelasCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -420,7 +437,9 @@ def delete_kelas(id_kelas: int, db: Session = Depends(get_db), _=Depends(require
     return {"message": f"Kelas {id_kelas} berhasil dihapus"}
 
 
-# ─── Guru ─────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Guru
+# =============================================================================
 
 @app.post("/guru/", response_model=schemas.GuruOut, status_code=201, tags=["Guru"])
 def create_guru(guru: schemas.GuruCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -476,7 +495,9 @@ def delete_guru(id_guru: int, db: Session = Depends(get_db), _=Depends(require_a
     return {"message": f"Guru {id_guru} berhasil dihapus"}
 
 
-# ─── Admin ────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Admin
+# =============================================================================
 
 @app.post("/admin/", response_model=schemas.AdminOut, status_code=201, tags=["Admin"])
 def create_admin(data: schemas.AdminCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -497,7 +518,9 @@ def delete_admin(id_admin: int, db: Session = Depends(get_db), _=Depends(require
     return {"message": f"Admin {id_admin} berhasil dihapus"}
 
 
-# ─── Kepala Sekolah ───────────────────────────────────────────────────────────
+# =============================================================================
+# Kepala Sekolah
+# =============================================================================
 
 @app.post("/kepala-sekolah/", response_model=schemas.KepsekOut, status_code=201, tags=["Kepala Sekolah"])
 def create_kepsek(data: schemas.KepsekCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -536,7 +559,9 @@ def delete_kepsek(id_kepsek: int, db: Session = Depends(get_db), _=Depends(requi
     return {"message": f"Kepala sekolah {id_kepsek} berhasil dihapus"}
 
 
-# ─── Siswa ────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Siswa
+# =============================================================================
 
 @app.post("/siswa/", response_model=schemas.SiswaOut, status_code=201, tags=["Siswa"])
 def create_siswa(data: schemas.SiswaCreate, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -553,21 +578,19 @@ def create_siswa(data: schemas.SiswaCreate, db: Session = Depends(get_db), _=Dep
 def list_siswa(skip=0, limit=100, db: Session = Depends(get_db), _=Depends(require_admin)):
     return crud.get_all_siswa(db, skip, limit)
 
+
 @app.get("/siswa/kelas/{id_kelas}", response_model=List[schemas.SiswaOut], tags=["Siswa"])
 def get_siswa_by_kelas(
     id_kelas: int,
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
-    """
-    Ambil daftar siswa berdasarkan kelas.
+    """Ambil daftar siswa berdasarkan kelas.
     Dapat diakses oleh: admin, kepala_sekolah, dan guru (yang punya akses ke kelas tersebut).
     """
-    # Validasi kelas ada
     if not crud.get_kelas(db, id_kelas):
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
- 
-    # Cek akses berdasarkan role
+
     if current_user.role == models.RoleEnum.guru:
         guru = _get_guru_or_403(db, current_user.id)
         _cek_guru_akses_kelas(guru, id_kelas)
@@ -576,7 +599,7 @@ def get_siswa_by_kelas(
         models.RoleEnum.kepala_sekolah,
     ):
         raise HTTPException(status_code=403, detail="Akses ditolak")
- 
+
     siswa_list = (
         db.query(models.Siswa)
         .filter(models.Siswa.id_kelas == id_kelas)
@@ -611,7 +634,9 @@ def delete_siswa(id_siswa: int, db: Session = Depends(get_db), _=Depends(require
     return {"message": f"Siswa {id_siswa} berhasil dihapus"}
 
 
-# ─── Wali Siswa ───────────────────────────────────────────────────────────────
+# =============================================================================
+# Wali Siswa
+# =============================================================================
 
 @app.put("/wali-siswa/{id_wali_siswa}", response_model=schemas.WaliSiswaOut, tags=["Wali Siswa"])
 def update_wali_siswa(id_wali_siswa: int, data: schemas.WaliSiswaUpdate, db: Session = Depends(get_db), _=Depends(require_admin)):
@@ -631,7 +656,9 @@ def get_wali_by_akun(id: int, db: Session = Depends(get_db), current_user: model
     return obj
 
 
-# ─── Pesan ────────────────────────────────────────────────────────────────────
+# =============================================================================
+# Pesan
+# =============================================================================
 
 @app.post("/pesan/", response_model=schemas.PesanOut, status_code=201, tags=["Pesan"])
 def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
@@ -686,7 +713,7 @@ def get_riwayat_percakapan(
         and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
     )
 
-    # ── Polling: hanya pesan baru setelah after_id (selalu asc) ───────────────
+    # Polling: hanya pesan baru setelah after_id (selalu asc)
     if after_id is not None:
         return (
             db.query(models.Pesan)
@@ -694,7 +721,7 @@ def get_riwayat_percakapan(
             .order_by(models.Pesan.waktu.asc()).all()
         )
 
-    # ── Tandai pesan dari lawan sebagai "diterima" (hanya saat fetch awal) ────
+    # Tandai pesan dari lawan sebagai "diterima" (hanya saat fetch awal)
     if before_id is None:
         lawan_id = id_b if current_user.id == id_a else id_a
         db.query(models.Pesan).filter(
@@ -704,10 +731,9 @@ def get_riwayat_percakapan(
         ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
         db.commit()
 
-    # ── Hitung total untuk header X-Total-Count ────────────────────────────────
+    # Hitung total untuk header X-Total-Count
     total = db.query(models.Pesan).filter(kedua_arah).count()
 
-    # ── Bangun query utama ─────────────────────────────────────────────────────
     q = db.query(models.Pesan).filter(kedua_arah)
 
     if before_id is not None:
@@ -820,7 +846,7 @@ def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = De
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id)
-    allowed_kelas = crud.decode_id_kelas(guru.id_kelas)  # [] jika NULL
+    allowed_kelas = crud.decode_id_kelas(guru.id_kelas)
     return [
         schemas.WaliListItem(
             id_akun_wali=w.id_akun,
@@ -834,7 +860,9 @@ def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = De
     ]
 
 
-# ─── Absensi ──────────────────────────────────────────────────────────────────
+# =============================================================================
+# Absensi
+# =============================================================================
 
 @app.get("/absensi/kelas/{id_kelas}", response_model=List[schemas.SiswaAbsensiItem], tags=["Absensi"])
 def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
@@ -923,8 +951,7 @@ def get_absensi_siswa(id_siswa: int, bulan: int, tahun: int, db: Session = Depen
     ]
 
 
-@app.get("/absensi/siswa/{id_siswa}/ringkasan",
-         response_model=schemas.RingkasanAbsensiOut, tags=["Absensi"])
+@app.get("/absensi/siswa/{id_siswa}/ringkasan", response_model=schemas.RingkasanAbsensiOut, tags=["Absensi"])
 def get_ringkasan_absensi(
     id_siswa: int, bulan: int, tahun: int,
     db: Session = Depends(get_db),
@@ -945,74 +972,12 @@ def get_ringkasan_absensi(
         elif ab.status == models.StatusAbsensiEnum.alpha: rekap.alpha += 1
 
     rekap.total_hari = rekap.hadir + rekap.sakit + rekap.izin + rekap.alpha
-
     return rekap
 
 
-# ─── Catatan Harian ───────────────────────────────────────────────────────────
-
-@router_laporan.get("/otomatis/siswa/{id_siswa}", response_model=schemas.LaporanSiswaOut,
-                    summary="[WALI/GURU/ADMIN] Laporan otomatis satu siswa (absensi + catatan)")
-def get_laporan_otomatis_siswa(
-    id_siswa: int,
-    bulan: int = Query(..., ge=1, le=12, description="Bulan (1-12)"),
-    tahun: int = Query(..., ge=2000, description="Tahun, contoh: 2025"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    _cek_wali_akses_siswa(db, current_user, id_siswa)
-    result = crud.get_laporan_otomatis_siswa(db, id_siswa, bulan, tahun)
-    if not result:
-        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
-    return result
-
-
-@router_laporan.get("/otomatis/kelas/{id_kelas}", response_model=schemas.LaporanKelasOut,
-                    summary="[GURU/ADMIN] Laporan otomatis satu kelas (rekap absensi semua siswa)")
-def get_laporan_otomatis_kelas(
-    id_kelas: int,
-    bulan: int = Query(..., ge=1, le=12, description="Bulan (1-12)"),
-    tahun: int = Query(..., ge=2000, description="Tahun, contoh: 2025"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
-    if not is_admin:
-        guru = _get_guru_or_403(db, current_user.id)
-        _cek_guru_akses_kelas(guru, id_kelas)
-    result = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
-    if not result:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    return result
-
-
-@router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut, summary="[GURU/ADMIN] Daftar catatan harian semua siswa satu kelas (range tanggal)")
-def get_laporan_catatan(
-    id_kelas: int = Query(..., description="ID kelas"),
-    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
-    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    if tanggal_awal > tanggal_akhir:
-        raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
-
-    # ✅ Admin/kepsek tidak perlu cek guru & akses kelas
-    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
-    if not is_admin:
-        guru = _get_guru_or_403(db, current_user.id)
-        _cek_guru_akses_kelas(guru, id_kelas)
-
-    result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
-    if not result:
-        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    if result.siswa:
-        nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
-        for item in result.siswa:
-            if not getattr(item, "nisn", None):
-                item.nisn = nisn_map.get(item.id_siswa, "")
-    return result
-
+# =============================================================================
+# Catatan Harian
+# =============================================================================
 
 @app.post("/catatan/", response_model=schemas.CatatanHarianOut, status_code=201, tags=["Catatan Harian"])
 def buat_catatan(
@@ -1024,7 +989,6 @@ def buat_catatan(
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
     guru = _get_guru_or_403(db, current_user.id)
     catatan = crud.create_catatan_harian(db, payload, guru.id_guru)
-    # Kirim notifikasi catatan ke wali yang relevan + WebSocket event
     crud.kirim_notif_catatan(db, catatan, current_user.nama)
     return crud._build_catatan_out(catatan)
 
@@ -1120,7 +1084,9 @@ async def upload_foto_catatan(id_catatan: int, file: UploadFile = File(...), db:
     return {"nama_file": nama_file, "url": f"/static/foto/{nama_file}"}
 
 
-# ─── Notifikasi ───────────────────────────────────────────────────────────────
+# =============================================================================
+# Notifikasi
+# =============================================================================
 
 @app.get("/notifikasi/", response_model=schemas.NotifikasiListResponse, tags=["Notifikasi"])
 def get_notifikasi(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
@@ -1136,17 +1102,19 @@ def tandai_notif_dibaca(payload: schemas.BacaNotifRequest, db: Session = Depends
     return {"message": f"{jumlah} notifikasi ditandai sudah dibaca", "jumlah": jumlah}
 
 
-# ─── Laporan ──────────────────────────────────────────────────────────────────
-# PENTING: urutan route — spesifik dulu, baru /{id_laporan}
+# =============================================================================
+# Laporan (router)
+#
+# Urutan route PENTING — spesifik dulu, baru /{id_laporan}.
 # FastAPI membaca dari atas ke bawah; "/{id_laporan}" akan menangkap
 # "/absensi", "/catatan", "/guru/", "/pdf/..." jika diletakkan lebih atas.
+# =============================================================================
 
 @router_laporan.post("/", response_model=schemas.LaporanOut, status_code=201, summary="Guru membuat laporan baru untuk satu kelas")
 def buat_laporan(payload: schemas.LaporanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat laporan")
     guru = _get_guru_or_403(db, current_user.id)
-    # Validasi kelas ada dan guru memiliki akses ke kelas tersebut
     kelas = db.get(models.Kelas, payload.id_kelas)
     if not kelas:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
@@ -1189,7 +1157,6 @@ def get_laporan_absensi(
     result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    # ── Inject nisn dari DB ───────────────────────────────────────────────────
     if result.siswa:
         nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
         for item in result.siswa:
@@ -1198,9 +1165,67 @@ def get_laporan_absensi(
     return result
 
 
+@router_laporan.get("/catatan", response_model=schemas.LaporanCatatanKelasOut, summary="[GURU/ADMIN] Daftar catatan harian semua siswa satu kelas (range tanggal)")
+def get_laporan_catatan(
+    id_kelas: int = Query(..., description="ID kelas"),
+    tanggal_awal: date = Query(..., description="Format: yyyy-MM-dd"),
+    tanggal_akhir: date = Query(..., description="Format: yyyy-MM-dd"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    if tanggal_awal > tanggal_akhir:
+        raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
+
+    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
+    if not is_admin:
+        guru = _get_guru_or_403(db, current_user.id)
+        _cek_guru_akses_kelas(guru, id_kelas)
+
+    result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    if result.siswa:
+        nisn_map = {s.id_siswa: (s.nisn or "") for s in db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
+        for item in result.siswa:
+            if not getattr(item, "nisn", None):
+                item.nisn = nisn_map.get(item.id_siswa, "")
+    return result
 
 
-# ─── PDF: Absensi Kelas (template buku absensi harian) ───────────────────────
+@router_laporan.get("/otomatis/siswa/{id_siswa}", response_model=schemas.LaporanSiswaOut,
+                    summary="[WALI/GURU/ADMIN] Laporan otomatis satu siswa (absensi + catatan)")
+def get_laporan_otomatis_siswa(
+    id_siswa: int,
+    bulan: int = Query(..., ge=1, le=12, description="Bulan (1-12)"),
+    tahun: int = Query(..., ge=2000, description="Tahun, contoh: 2025"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    _cek_wali_akses_siswa(db, current_user, id_siswa)
+    result = crud.get_laporan_otomatis_siswa(db, id_siswa, bulan, tahun)
+    if not result:
+        raise HTTPException(status_code=404, detail="Siswa tidak ditemukan")
+    return result
+
+
+@router_laporan.get("/otomatis/kelas/{id_kelas}", response_model=schemas.LaporanKelasOut,
+                    summary="[GURU/ADMIN] Laporan otomatis satu kelas (rekap absensi semua siswa)")
+def get_laporan_otomatis_kelas(
+    id_kelas: int,
+    bulan: int = Query(..., ge=1, le=12, description="Bulan (1-12)"),
+    tahun: int = Query(..., ge=2000, description="Tahun, contoh: 2025"),
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
+    if not is_admin:
+        guru = _get_guru_or_403(db, current_user.id)
+        _cek_guru_akses_kelas(guru, id_kelas)
+    result = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
+    if not result:
+        raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
+    return result
+
 
 @router_laporan.get("/pdf/absensi", summary="Generate PDF buku absensi harian kelas (per bulan)")
 def download_pdf_absensi(
@@ -1228,7 +1253,6 @@ def download_pdf_absensi(
     if not data:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
 
-    # Inject NISN
     if data.siswa:
         nisn_map = {s.id_siswa: (s.nisn or "") for s in
                     db.query(models.Siswa).filter(models.Siswa.id_kelas == id_kelas).all()}
@@ -1236,8 +1260,7 @@ def download_pdf_absensi(
             if not getattr(item, "nisn", None):
                 item.nisn = nisn_map.get(item.id_siswa, "")
 
-    # Ambil detail absensi harian tiap siswa
-    detail_map: dict[int, dict[int, str]] = {}   # {id_siswa: {tanggal: simbol}}
+    detail_map: dict[int, dict[int, str]] = {}
     absensi_rows = (
         db.query(models.Absensi)
         .filter(
@@ -1266,8 +1289,6 @@ def download_pdf_absensi(
     )
 
 
-# ─── PDF: Catatan Harian Kelas ────────────────────────────────────────────────
-
 @router_laporan.get("/pdf/catatan", summary="[GURU/ADMIN] Generate PDF laporan catatan harian satu siswa")
 def download_pdf_catatan(
     id_siswa: int = Query(...),
@@ -1278,7 +1299,7 @@ def download_pdf_catatan(
 ):
     import calendar as _cal
     from datetime import date as _date
- 
+
     is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
     siswa = db.get(models.Siswa, id_siswa)
     if not siswa:
@@ -1287,12 +1308,12 @@ def download_pdf_catatan(
         guru = _get_guru_or_403(db, current_user.id)
         if siswa.id_kelas is not None:
             _cek_guru_akses_kelas(guru, siswa.id_kelas)
- 
+
     tanggal_awal  = _date(tahun, bulan, 1)
     hari_terakhir = _cal.monthrange(tahun, bulan)[1]
     tanggal_akhir = _date(tahun, bulan, hari_terakhir)
- 
-    nama_kelas  = siswa.kelas.nama_kelas if siswa.kelas else "-"
+
+    nama_kelas   = siswa.kelas.nama_kelas if siswa.kelas else "-"
     catatan_list = crud.get_catatan_siswa_range(db, id_siswa, tanggal_awal, tanggal_akhir)
     catatan_out  = [
         schemas.CatatanRangeOut(
@@ -1306,10 +1327,10 @@ def download_pdf_catatan(
         id_siswa=siswa.id_siswa, nama_siswa=siswa.nama_siswa,
         jumlah_catatan=len(catatan_out), catatan=catatan_out,
     )
- 
+
     NAMA_BULAN_ID = ["","Januari","Februari","Maret","April","Mei","Juni",
                      "Juli","Agustus","September","Oktober","November","Desember"]
- 
+
     pdf_bytes = _generate_pdf_catatan(data_siswa, nama_kelas, tanggal_awal, tanggal_akhir)
     nama_file = (
         f"catatan_{siswa.nama_siswa}_{NAMA_BULAN_ID[bulan]}_{tahun}.pdf"
@@ -1319,9 +1340,9 @@ def download_pdf_catatan(
         BytesIO(pdf_bytes), media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nama_file}"'},
     )
- 
 
-# ── /{id_laporan} — HARUS paling bawah di router ini ─────────────────────────
+
+# /{id_laporan} harus paling bawah — jangan pindahkan ke atas
 
 @router_laporan.get("/{id_laporan}", response_model=schemas.LaporanOut, summary="Detail satu laporan")
 def get_laporan_detail(id_laporan: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
@@ -1357,32 +1378,37 @@ def verifikasi_laporan(
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
-    if current_user.role not in (
-        models.RoleEnum.admin,
-        models.RoleEnum.kepala_sekolah,
-    ):
+    if current_user.role not in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah):
         raise HTTPException(
             status_code=403,
             detail="Hanya admin atau kepala sekolah yang dapat memverifikasi laporan",
         )
- 
+
     lap = crud.verifikasi_laporan(db, id_laporan, payload)
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
- 
-    # ── Kirim notifikasi ke wali HANYA saat status menjadi 'verifikasi' ──────
+
+    # Kirim notifikasi ke wali hanya saat status menjadi 'verifikasi'
     if payload.status == models.StatusLaporanEnum.verifikasi:
         crud.kirim_notif_laporan_terverifikasi(
             db,
             lap,
-            nama_admin=current_user.nama,   # nama admin yang sedang login
+            nama_admin=current_user.nama,
         )
- 
+
     return crud._build_laporan_out(lap)
 
 
-# ─── PDF Generator: Buku Absensi Harian Kelas ────────────────────────────────
-# Template: kolom tanggal 1-N (sesuai bulan), isi: */ S I A, total per siswa, rekap bawah
+# =============================================================================
+# Register Router
+# =============================================================================
+
+app.include_router(router_laporan)
+
+
+# =============================================================================
+# PDF Generator — Buku Absensi Harian Kelas
+# =============================================================================
 
 def _generate_pdf_absensi_harian(
     data,           # schemas.LaporanAbsensiKelasOut
@@ -1406,9 +1432,8 @@ def _generate_pdf_absensi_harian(
     C_LIGHT  = colors.HexColor("#f0f7f4")
     C_BORDER = colors.HexColor("#b7d4c8")
     C_TOTAL  = colors.HexColor("#d8f3dc")
-    C_HEAD2  = colors.HexColor("#52b788")   # warna header baris ke-2
+    C_HEAD2  = colors.HexColor("#52b788")
 
-    # ── Style paragraf untuk isi sel ─────────────────────────────────────────
     st_judul = ParagraphStyle("Judul", parent=styles["Heading1"],
                               alignment=TA_CENTER, fontSize=13, spaceAfter=2, textColor=C_GREEN)
     st_sub   = ParagraphStyle("Sub",   parent=styles["Normal"],
@@ -1420,7 +1445,6 @@ def _generate_pdf_absensi_harian(
 
     elems = []
 
-    # ── Header dokumen ────────────────────────────────────────────────────────
     elems.append(Paragraph("BUKU ABSENSI HARIAN ANAK", st_judul))
     elems.append(Paragraph(
         f"Kelompok : {data.nama_kelas} &nbsp;&nbsp;&nbsp; "
@@ -1429,24 +1453,19 @@ def _generate_pdf_absensi_harian(
     elems.append(HRFlowable(width="100%", thickness=1.2, color=C_GREEN))
     elems.append(Spacer(1, 0.2*cm))
 
-    # ── Hitung lebar kolom ────────────────────────────────────────────────────
-    # Halaman landscape A4 usable ≈ 27.7cm setelah margin
     PAGE_W = 27.7 * cm
     W_NO   = 0.55 * cm
     W_NAMA = 4.2  * cm
-    W_S    = 0.7  * cm   # kolom S
-    W_I    = 0.7  * cm   # kolom I
-    W_A    = 0.7  * cm   # kolom A
-    W_KET  = 2.0  * cm   # kolom Keterangan
+    W_S    = 0.7  * cm
+    W_I    = 0.7  * cm
+    W_A    = 0.7  * cm
+    W_KET  = 2.0  * cm
 
-    # Sisa lebar untuk kolom tanggal
-    sisa = PAGE_W - W_NO - W_NAMA - W_S - W_I - W_A - W_KET
-    W_TGL = sisa / hari_terakhir   # lebar tiap kolom tanggal
+    sisa  = PAGE_W - W_NO - W_NAMA - W_S - W_I - W_A - W_KET
+    W_TGL = sisa / hari_terakhir
 
     col_widths = [W_NO, W_NAMA] + [W_TGL] * hari_terakhir + [W_S, W_I, W_A, W_KET]
 
-    # ── Baris header ─────────────────────────────────────────────────────────
-    # Baris 1: No | Nama Siswa | 1 | 2 | … | N | S | I | A | Keterangan
     hdr1 = [
         Paragraph("No",         st_cell),
         Paragraph("Nama Siswa", st_cell),
@@ -1460,7 +1479,6 @@ def _generate_pdf_absensi_harian(
         Paragraph("Ket", st_cell),
     ]
 
-    # ── Baris data siswa ──────────────────────────────────────────────────────
     siswa_list = sorted(data.siswa, key=lambda s: s.nama_siswa)
     rows = [hdr1]
 
@@ -1477,11 +1495,10 @@ def _generate_pdf_absensi_harian(
             Paragraph(str(siswa.sakit), st_cell),
             Paragraph(str(siswa.izin),  st_cell),
             Paragraph(str(siswa.alpha), st_cell),
-            Paragraph("", st_cell),   # kolom keterangan kosong untuk diisi tangan
+            Paragraph("", st_cell),
         ]
         rows.append(row)
 
-    # ── Baris total keseluruhan ───────────────────────────────────────────────
     total_row = [Paragraph("", st_cell), Paragraph("JUMLAH", st_cell)]
     total_row += [Paragraph("", st_cell)] * hari_terakhir
     total_row += [
@@ -1492,39 +1509,30 @@ def _generate_pdf_absensi_harian(
     ]
     rows.append(total_row)
 
-    # ── Buat tabel ────────────────────────────────────────────────────────────
     tbl = Table(rows, colWidths=col_widths, repeatRows=1)
 
     n_data  = len(siswa_list)
-    n_total = n_data + 1   # indeks baris total (0=header, 1..n=siswa, n+1=total)
+    n_total = n_data + 1
 
     ts = [
-        # ── Header row ───────────────────────────────────────────────────────
         ("BACKGROUND",    (0, 0), (-1, 0),  C_GREEN),
         ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
         ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, 0),  6.5),
         ("ALIGN",         (0, 0), (-1, 0),  "CENTER"),
         ("VALIGN",        (0, 0), (-1, 0),  "MIDDLE"),
-
-        # ── Data rows ────────────────────────────────────────────────────────
         ("FONTNAME",      (0, 1), (-1, n_data),  "Helvetica"),
         ("FONTSIZE",      (0, 1), (-1, n_data),  6.5),
-        ("ALIGN",         (0, 1), (0, n_data),   "CENTER"),   # No
-        ("ALIGN",         (1, 1), (1, n_data),   "LEFT"),     # Nama
-        ("ALIGN",         (2, 1), (-1, n_data),  "CENTER"),   # Tanggal + rekap
+        ("ALIGN",         (0, 1), (0, n_data),   "CENTER"),
+        ("ALIGN",         (1, 1), (1, n_data),   "LEFT"),
+        ("ALIGN",         (2, 1), (-1, n_data),  "CENTER"),
         ("VALIGN",        (0, 1), (-1, n_data),  "MIDDLE"),
-        ("ROWBACKGROUNDS",(0, 1), (-1, n_data),
-         [colors.white, C_LIGHT]),
-
-        # ── Total row ────────────────────────────────────────────────────────
+        ("ROWBACKGROUNDS",(0, 1), (-1, n_data),  [colors.white, C_LIGHT]),
         ("BACKGROUND",    (0, n_total), (-1, n_total), C_TOTAL),
         ("FONTNAME",      (0, n_total), (-1, n_total), "Helvetica-Bold"),
         ("FONTSIZE",      (0, n_total), (-1, n_total), 6.5),
         ("ALIGN",         (0, n_total), (-1, n_total), "CENTER"),
         ("VALIGN",        (0, n_total), (-1, n_total), "MIDDLE"),
-
-        # ── Grid & padding ───────────────────────────────────────────────────
         ("GRID",          (0, 0), (-1, -1), 0.3, C_BORDER),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
@@ -1535,7 +1543,6 @@ def _generate_pdf_absensi_harian(
     tbl.setStyle(TableStyle(ts))
     elems.append(tbl)
 
-    # ── Keterangan simbol + rekap total di bawah tabel ───────────────────────
     elems.append(Spacer(1, 0.3 * cm))
 
     ket_data = [[
@@ -1556,7 +1563,6 @@ def _generate_pdf_absensi_harian(
     ]))
     elems.append(ket_tbl)
 
-    # ── Tanda tangan kepala sekolah ───────────────────────────────────────────
     elems.append(Spacer(1, 0.5 * cm))
     ttd_data = [[
         Paragraph("", styles["Normal"]),
@@ -1574,7 +1580,9 @@ def _generate_pdf_absensi_harian(
     return buffer.read()
 
 
-# ─── PDF Generator: Catatan Harian Kelas ─────────────────────────────────────
+# =============================================================================
+# PDF Generator — Catatan Harian Siswa
+# =============================================================================
 
 def _generate_pdf_catatan(
     data: schemas.LaporanCatatanSiswaOut,
@@ -1620,7 +1628,6 @@ def _generate_pdf_catatan(
     elems.append(Spacer(1, 0.4*cm))
 
     col_w = [0.8*cm, 2.2*cm, 3*cm, 7*cm, 3*cm]
-    header = [["No", "Tanggal", "Judul", "Catatan", "Saran"]]
 
     if not data.catatan:
         st_empty = ParagraphStyle("Empty", parent=styles["Normal"],
@@ -1635,11 +1642,11 @@ def _generate_pdf_catatan(
             tgl_str = (catatan.tanggal.strftime("%d-%m-%Y")
                        if hasattr(catatan.tanggal, "strftime") else str(catatan.tanggal))
             rows.append([
-                Paragraph(str(i),              st_cell),
-                Paragraph(tgl_str,             st_cell),
+                Paragraph(str(i),               st_cell),
+                Paragraph(tgl_str,              st_cell),
                 Paragraph(catatan.judul or "-", st_cell),
                 Paragraph(catatan.isi   or "-", st_cell),
-                Paragraph("",                  st_cell),
+                Paragraph("",                   st_cell),
             ])
 
         tbl = Table(rows, colWidths=col_w, repeatRows=1)
@@ -1663,10 +1670,8 @@ def _generate_pdf_catatan(
         ]))
         elems.append(tbl)
 
-    # ── TTD Kepala Sekolah ────────────────────────────────────────────────────
     elems.append(Spacer(1, 1.2*cm))
 
-    # Ambil bulan/tahun dari tanggal_akhir untuk label TTD
     bulan_ttd = NAMA_BULAN_ID[tanggal_akhir.month]
     tahun_ttd = tanggal_akhir.year
 
@@ -1689,7 +1694,9 @@ def _generate_pdf_catatan(
     return buffer.read()
 
 
-# ─── WebSocket ────────────────────────────────────────────────────────────────
+# =============================================================================
+# WebSocket
+# =============================================================================
 
 @app.websocket("/ws/{id}")
 async def websocket_endpoint(websocket: WebSocket, id: int, token: str):
@@ -1713,6 +1720,10 @@ async def websocket_endpoint(websocket: WebSocket, id: int, token: str):
     finally:
         ws_manager.disconnect(id, websocket)
 
+
+# =============================================================================
+# Entry Point
+# =============================================================================
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)

@@ -640,49 +640,36 @@ def kirim_notif_laporan_terverifikasi(
     laporan: "models.Laporan",
     nama_admin: str,
 ) -> None:
-    """
-    Dipanggil dari endpoint verifikasi laporan (main.py) SETELAH
-    verifikasi_laporan() berhasil dan status == 'verifikasi'.
- 
-    Alur:
-    1. Ambil semua siswa di kelas laporan (lap.id_kelas).
-    2. Untuk setiap siswa yang punya wali, buat baris Notifikasi
-       dengan tipe='laporan' ke akun wali.
-    3. Kirim WebSocket event 'laporan_verified' ke wali yang online,
-       dengan payload:
-         {
-           "type": "laporan_verified",
-           "data": {
-             "id_laporan"   : int,
-             "jenis_laporan": "absensi" | "catatan",
-             "periode"      : str,
-             "nama_guru"    : str,       ← nama guru pembuat laporan
-             "nama_admin"   : str,       ← nama admin yang verifikasi
-             "keterangan"   : str | null,
-             "tanggal"      : str        ← ISO timestamp
-           }
-         }
- 
-    Dipanggil hanya jika payload.status == 'verifikasi'
-    (bukan saat status kembali ke menunggu_verifikasi).
-    """
     from app.websocket_manager import ws_manager
     from app import models
- 
-    # Laporan harus punya id_kelas agar tahu ke wali mana notif dikirim
+
     if laporan.id_kelas is None:
         return
- 
-    # Ambil nama guru dari relasi (sudah joinedload di verifikasi_laporan)
+
+    # ── CEK: apakah laporan pasangan (periode + kelas yang sama) sudah verif? ──
+    semua_periode = (
+        db.query(models.Laporan)
+        .filter(
+            models.Laporan.id_kelas == laporan.id_kelas,
+            models.Laporan.periode  == laporan.periode,
+            models.Laporan.status   == models.StatusLaporanEnum.verifikasi,
+        )
+        .all()
+    )
+
+    jenis_terverif = {l.jenis_laporan.value for l in semua_periode}
+
+    # Kirim notif HANYA jika keduanya sudah verif
+    if "absensi" not in jenis_terverif or "catatan" not in jenis_terverif:
+        return  # ← belum lengkap, tidak kirim notif
+
+    # ── Ambil nama guru dari laporan yang baru saja diverif ──
     try:
         nama_guru = laporan.guru.akun.nama if laporan.guru and laporan.guru.akun else "Guru"
     except Exception:
         nama_guru = "Guru"
- 
-    jenis = laporan.jenis_laporan.value if laporan.jenis_laporan else "absensi"
-    label_jenis = "Absensi" if jenis == "absensi" else "Catatan Harian"
- 
-    # Ambil semua siswa di kelas ini yang memiliki wali
+
+    # ── Kirim notif ke semua wali di kelas ──
     siswa_list = (
         db.query(models.Siswa)
         .filter(
@@ -693,7 +680,7 @@ def kirim_notif_laporan_terverifikasi(
     )
     if not siswa_list:
         return
- 
+
     id_wali_set = {s.id_wali_siswa for s in siswa_list}
     wali_map = {
         w.id_wali_siswa: w
@@ -701,44 +688,43 @@ def kirim_notif_laporan_terverifikasi(
         .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set))
         .all()
     }
- 
-    # Timestamp sekarang (WIB string)
+
     from datetime import datetime, timezone, timedelta
-    now_wib = datetime.now(timezone(timedelta(hours=7)))
+    now_wib     = datetime.now(timezone(timedelta(hours=7)))
     tanggal_str = now_wib.strftime("%Y-%m-%dT%H:%M:%S")
- 
-    payload_data = {
-        "id_laporan"   : laporan.id_laporan,
-        "jenis_laporan": jenis,
-        "periode"      : laporan.periode,
-        "nama_guru"    : nama_guru,
-        "nama_admin"   : nama_admin,
-        "keterangan"   : laporan.keterangan,
-        "tanggal"      : tanggal_str,
+
+    ws_payload = {
+        "type": "laporan_verified",
+        "data": {
+            "id_laporan"   : laporan.id_laporan,
+            "jenis_laporan": laporan.jenis_laporan.value,
+            "periode"      : laporan.periode,
+            "nama_guru"    : nama_guru,
+            "nama_admin"   : nama_admin,
+            "keterangan"   : laporan.keterangan,
+            "tanggal"      : tanggal_str,
+        }
     }
-    ws_payload = {"type": "laporan_verified", "data": payload_data}
- 
+
     for id_ws, wali in wali_map.items():
-        # Simpan notifikasi ke database
         _buat_notif(
             db,
             wali.id_akun,
-            f"Laporan {label_jenis} Tersedia",
-            f"Laporan {label_jenis} periode {laporan.periode} "
-            f"oleh {nama_guru} telah diverifikasi.",
+            f"Laporan {laporan.periode} Tersedia",
+            f"Laporan absensi & catatan periode {laporan.periode} "
+            f"telah diverifikasi dan siap dilihat.",
             models.TipeNotifEnum.laporan,
             laporan.id_laporan,
         )
- 
-        # Kirim WebSocket ke wali yang sedang online
+
         if ws_manager.aktif(wali.id_akun):
             try:
                 loop = asyncio.get_running_loop()
                 loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, ws_payload))
             except RuntimeError:
                 pass
- 
-    db.commit()    
+
+    db.commit()
 
 def get_notifikasi_by_akun(db: Session, id: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:

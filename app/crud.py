@@ -527,7 +527,7 @@ def kirim_notif_absensi_batch(
         # ── Simpan notifikasi ke database ─────────────────────────────────
         _buat_notif(db, wali.id_akun, "Absensi Diperbarui",
                     f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
-                    f"telah diisi oleh {nama_guru}",
+                    f"telah diperbarui.",
                     models.TipeNotifEnum.absensi, id_absensi_ref)
 
         # ── Kirim WebSocket event ke wali ─────────────────────────────────
@@ -711,8 +711,8 @@ def kirim_notif_laporan_terverifikasi(
             db,
             wali.id_akun,
             f"Laporan {laporan.periode} Tersedia",
-            f"Laporan absensi & catatan periode {laporan.periode} "
-            f"telah diverifikasi dan siap dilihat.",
+            f"Laporan absensi & catatan bulan {laporan.periode} "
+            f"telah dibuat.",
             models.TipeNotifEnum.laporan,
             laporan.id_laporan,
         )

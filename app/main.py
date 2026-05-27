@@ -1092,48 +1092,10 @@ async def upload_foto_catatan(id_catatan: int, file: UploadFile = File(...), db:
 # =============================================================================
 
 @app.get("/notifikasi/", response_model=schemas.NotifikasiListResponse, tags=["Notifikasi"])
-def get_notifikasi(
-    skip=0, limit=50,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user)
-):
-    notif_list = crud.get_notifikasi_by_akun(db, current_user.id, skip, limit)
-
-    # Kumpulkan id_pengirim yang masih punya pesan belum dibaca
-    id_pengirim_set = {
-        n.id_pengirim for n in notif_list
-        if n.tipe == models.TipeNotifEnum.pesan and n.id_pengirim
-    }
-
-    pengirim_belum_dibaca = set()
-    if id_pengirim_set:
-        rows = db.query(models.Pesan.id_pengirim).filter(
-            models.Pesan.id_pengirim.in_(id_pengirim_set),
-            models.Pesan.id_penerima == current_user.id,
-            models.Pesan.status.in_([
-                models.StatusPesanEnum.terkirim,
-                models.StatusPesanEnum.diterima,
-            ]),
-        ).distinct().all()
-        pengirim_belum_dibaca = {row[0] for row in rows}
-
-    # Override field belum_dibaca langsung di ORM object sebelum serialisasi
-    for n in notif_list:
-        if n.tipe == models.TipeNotifEnum.pesan and n.id_pengirim:
-            n.status = (
-                models.StatusNotifEnum.belum_dibaca
-                if n.id_pengirim in pengirim_belum_dibaca
-                else models.StatusNotifEnum.sudah_dibaca
-            )
-
-    total_belum = sum(
-        1 for n in notif_list
-        if n.status == models.StatusNotifEnum.belum_dibaca
-    )
-
+def get_notifikasi(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     return schemas.NotifikasiListResponse(
-        total_belum_dibaca=total_belum,
-        data=notif_list,
+        total_belum_dibaca=crud.count_notif_belum_dibaca(db, current_user.id),
+        data=crud.get_notifikasi_by_akun(db, current_user.id, skip, limit),
     )
 
 

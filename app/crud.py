@@ -468,22 +468,25 @@ def _buat_notif(db: Session, id: int, judul: str, pesan: str,
     db.add(obj)
     return obj
 
-def kirim_notif_pesan(db: Session, id_akun_penerima: int, nama_pengirim: str,
-                      id_pesan: int, payload_ws: dict = None) -> models.Notifikasi:
+def kirim_notif_pesan(
+    db: Session,
+    id_akun_penerima: int,
+    nama_pengirim: str,
+    id_pengirim: int,          # ← TAMBAH: id akun pengirim (bukan id_pesan)
+    id_pesan: int,             # ← tetap ada untuk keperluan lain / WS payload
+    payload_ws: dict = None,
+) -> models.Notifikasi:
     from app.websocket_manager import ws_manager
 
-    # Cari id_akun pengirim dari payload_ws
-    id_pengirim = payload_ws.get("id_pengirim") if payload_ws else None
-
-    notif = models.Notifikasi(
-        id_akun=id_akun_penerima,
-        judul=f"Pesan dari {nama_pengirim}",
-        pesan=f"Pesan baru dari {nama_pengirim}",
-        tipe=models.TipeNotifEnum.pesan,
-        ref_id=id_pesan,
-        id_pengirim=id_pengirim,   # ← TAMBAH INI
+    # Simpan id_pengirim sebagai ref_id agar Android bisa baca getIdPengirim()
+    notif = _buat_notif(
+        db,
+        id_akun_penerima,
+        f"Pesan dari {nama_pengirim}",
+        f"Pesan baru dari {nama_pengirim}",
+        models.TipeNotifEnum.pesan,
+        id_pengirim,           # ← sebelumnya: id_pesan
     )
-    db.add(notif)
     db.commit()
     db.refresh(notif)
 

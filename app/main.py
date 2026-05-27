@@ -677,6 +677,7 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
         db,
         id_akun_penerima=pesan.id_penerima,
         nama_pengirim=current_user.nama,
+        id_pengirim=current_user.id,
         id_pesan=pesan.id_pesan,
         payload_ws={
             "id_pesan":      pesan.id_pesan,

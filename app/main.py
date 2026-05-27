@@ -826,7 +826,10 @@ def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = De
         belum = db.query(models.Pesan).filter(
             models.Pesan.id_pengirim == gid,
             models.Pesan.id_penerima == current_user.id,
-            models.Pesan.status == models.StatusPesanEnum.diterima,
+            models.Pesan.status.in_([
+                models.StatusPesanEnum.terkirim,
+                models.StatusPesanEnum.diterima,
+            ]),
         ).count()
         hasil.append(schemas.GuruListItem(
             id_akun_guru=gid,

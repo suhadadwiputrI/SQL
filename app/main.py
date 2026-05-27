@@ -692,6 +692,7 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
     return pesan
 
 
+
 @app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOut], tags=["Pesan"])
 def get_riwayat_percakapan(
     id_a: int, id_b: int,
@@ -766,6 +767,14 @@ def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db)
         models.Pesan.id_penerima == current_user.id,
         models.Pesan.status.in_([models.StatusPesanEnum.terkirim, models.StatusPesanEnum.diterima]),
     ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
+    
+    db.query(models.Notifikasi).filter(
+        models.Notifikasi.id_akun == current_user.id,
+        models.Notifikasi.tipe == models.TipeNotifEnum.pesan,
+        models.Notifikasi.ref_id == data.id_pengirim,
+        models.Notifikasi.status == models.StatusNotifEnum.belum_dibaca,
+    ).update({"status": models.StatusNotifEnum.sudah_dibaca}, synchronize_session=False)
+    
     db.commit()
     return {"message": "Pesan ditandai dibaca"}
 

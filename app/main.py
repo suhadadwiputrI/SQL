@@ -1092,31 +1092,10 @@ async def upload_foto_catatan(id_catatan: int, file: UploadFile = File(...), db:
 # =============================================================================
 
 @app.get("/notifikasi/", response_model=schemas.NotifikasiListResponse, tags=["Notifikasi"])
-def get_notifikasi(
-    skip=0, limit=50,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user)
-):
-    notif_list = crud.get_notifikasi_by_akun(db, current_user.id, skip, limit)
-
-    # Koreksi status belum_dibaca untuk tipe "pesan":
-    # ikut status pesan di tabel Pesan, bukan field dibaca di tabel Notifikasi
-    for notif in notif_list:
-        if notif.tipe == "pesan" and notif.id_pengirim:
-            ada_belum_dibaca = db.query(models.Pesan).filter(
-                models.Pesan.id_pengirim == notif.id_pengirim,
-                models.Pesan.id_penerima == current_user.id,
-                models.Pesan.status.in_([
-                    models.StatusPesanEnum.terkirim,
-                    models.StatusPesanEnum.diterima,
-                ]),
-            ).first()
-            # Override field belum_dibaca sesuai kondisi nyata
-            notif.belum_dibaca = ada_belum_dibaca is not None
-
+def get_notifikasi(skip=0, limit=50, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     return schemas.NotifikasiListResponse(
         total_belum_dibaca=crud.count_notif_belum_dibaca(db, current_user.id),
-        data=notif_list,
+        data=crud.get_notifikasi_by_akun(db, current_user.id, skip, limit),
     )
 
 

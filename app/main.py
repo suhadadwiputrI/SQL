@@ -763,7 +763,7 @@ def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db)
     db.query(models.Pesan).filter(
         models.Pesan.id_pengirim == data.id_pengirim,
         models.Pesan.id_penerima == current_user.id,
-        models.Pesan.status == models.StatusPesanEnum.diterima,
+        models.Pesan.status.in_([models.StatusPesanEnum.terkirim, models.StatusPesanEnum.diterima]),
     ).update({"status": models.StatusPesanEnum.dibaca}, synchronize_session=False)
     db.commit()
     return {"message": "Pesan ditandai dibaca"}

@@ -1477,161 +1477,162 @@ def _generate_pdf_absensi_harian(
         leftMargin=1*cm, rightMargin=1*cm,
     )
     styles  = getSampleStyleSheet()
-    C_GREEN  = colors.HexColor("#2d6a4f")
-    C_LIGHT  = colors.HexColor("#f0f7f4")
-    C_BORDER = colors.HexColor("#b7d4c8")
-    C_TOTAL  = colors.HexColor("#d8f3dc")
-    C_HEAD2  = colors.HexColor("#52b788")
+    C_BLACK = colors.black
+    C_WHITE = colors.white
 
     st_judul = ParagraphStyle("Judul", parent=styles["Heading1"],
-                              alignment=TA_CENTER, fontSize=13, spaceAfter=2, textColor=C_GREEN)
-    st_sub   = ParagraphStyle("Sub",   parent=styles["Normal"],
-                              alignment=TA_CENTER, fontSize=9, spaceAfter=1)
+                              alignment=TA_CENTER, fontSize=13, spaceAfter=2,
+                              textColor=C_BLACK, fontName="Helvetica-Bold")
     st_cell  = ParagraphStyle("Cell",  parent=styles["Normal"],
                               fontSize=6.5, leading=8, alignment=TA_CENTER)
     st_name  = ParagraphStyle("Name",  parent=styles["Normal"],
                               fontSize=7, leading=9)
+    st_rekap = ParagraphStyle("Rekap", parent=styles["Normal"],
+                              fontSize=8, leading=12)
+
+    PAGE_W = 27.7 * cm
 
     elems = []
 
+    # ── Judul ──
     elems.append(Paragraph("BUKU ABSENSI HARIAN ANAK", st_judul))
-    elems.append(Paragraph(
-        f"Kelompok : {data.nama_kelas} &nbsp;&nbsp;&nbsp; "
-        f"Bulan : {nama_bulan}, {tahun}", st_sub))
-    elems.append(Spacer(1, 0.25*cm))
-    elems.append(HRFlowable(width="100%", thickness=1.2, color=C_GREEN))
-    elems.append(Spacer(1, 0.2*cm))
 
-    PAGE_W = 27.7 * cm
+    # ── Subtitle: Kelompok kiri, Bulan kanan ──
+    sub_tbl = Table(
+        [[Paragraph(f"Kelompok : {data.nama_kelas}",
+                    ParagraphStyle("SL", parent=styles["Normal"], fontSize=9)),
+          Paragraph(f"Bulan : {nama_bulan}, {tahun}",
+                    ParagraphStyle("SR", parent=styles["Normal"], fontSize=9, alignment=2))]],
+        colWidths=[PAGE_W * 0.5, PAGE_W * 0.5]
+    )
+    sub_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+    elems.append(sub_tbl)
+    elems.append(Spacer(1, 0.3*cm))
+
+    # ── Lebar kolom ──
     W_NO   = 0.55 * cm
-    W_NAMA = 4.2  * cm
-    W_S    = 0.7  * cm
-    W_I    = 0.7  * cm
-    W_A    = 0.7  * cm
-    W_KET  = 2.0  * cm
-
-    sisa  = PAGE_W - W_NO - W_NAMA - W_S - W_I - W_A - W_KET
-    W_TGL = sisa / hari_terakhir
+    W_NAMA = 3.8  * cm
+    W_S    = 0.6  * cm
+    W_I    = 0.6  * cm
+    W_A    = 0.6  * cm
+    W_KET  = 2.2  * cm
+    sisa   = PAGE_W - W_NO - W_NAMA - W_S - W_I - W_A - W_KET
+    W_TGL  = sisa / hari_terakhir
 
     col_widths = [W_NO, W_NAMA] + [W_TGL] * hari_terakhir + [W_S, W_I, W_A, W_KET]
+    tgl_end    = 1 + hari_terakhir  # index kolom terakhir tanggal (0-based)
 
-    hdr1 = [
-        Paragraph("No",         st_cell),
-        Paragraph("Nama Siswa", st_cell),
-    ]
-    for d in range(1, hari_terakhir + 1):
-        hdr1.append(Paragraph(str(d), st_cell))
-    hdr1 += [
-        Paragraph("S", st_cell),
-        Paragraph("I", st_cell),
-        Paragraph("A", st_cell),
-        Paragraph("Ket", st_cell),
-    ]
+    # ── 2 baris header ──
+    hdr1 = (
+        [Paragraph("NO",              st_cell),
+         Paragraph("NAMA SISWA",      st_cell)]
+        + [Paragraph("TANGGAL ABSENSI", st_cell)] + [""] * (hari_terakhir - 1)
+        + [Paragraph("S",             st_cell),
+           Paragraph("I",             st_cell),
+           Paragraph("A",             st_cell),
+           Paragraph("Keterangan",    st_cell)]
+    )
+    hdr2 = (
+        [Paragraph("", st_cell), Paragraph("", st_cell)]
+        + [Paragraph(str(d), st_cell) for d in range(1, hari_terakhir + 1)]
+        + [Paragraph("", st_cell)] * 4
+    )
 
     siswa_list = sorted(data.siswa, key=lambda s: s.nama_siswa)
-    rows = [hdr1]
+    rows = [hdr1, hdr2]
 
     for idx, siswa in enumerate(siswa_list, start=1):
-        absensi_siswa = detail_map.get(siswa.id_siswa, {})
-        row = [
-            Paragraph(str(idx), st_cell),
-            Paragraph(siswa.nama_siswa, st_name),
-        ]
-        for d in range(1, hari_terakhir + 1):
-            simbol = absensi_siswa.get(d, "")
-            row.append(Paragraph(simbol, st_cell))
+        ab = detail_map.get(siswa.id_siswa, {})
+        row = [Paragraph(str(idx), st_cell), Paragraph(siswa.nama_siswa, st_name)]
+        row += [Paragraph(ab.get(d, ""), st_cell) for d in range(1, hari_terakhir + 1)]
         row += [
             Paragraph(str(siswa.sakit), st_cell),
             Paragraph(str(siswa.izin),  st_cell),
             Paragraph(str(siswa.alpha), st_cell),
-            Paragraph("", st_cell),
+            Paragraph("",               st_cell),
         ]
         rows.append(row)
 
-    total_row = [Paragraph("", st_cell), Paragraph("JUMLAH", st_cell)]
-    total_row += [Paragraph("", st_cell)] * hari_terakhir
-    total_row += [
-        Paragraph(str(data.total_sakit), st_cell),
-        Paragraph(str(data.total_izin),  st_cell),
-        Paragraph(str(data.total_alpha), st_cell),
-        Paragraph("", st_cell),
-    ]
-    rows.append(total_row)
+    n_data = len(siswa_list)
 
-    tbl = Table(rows, colWidths=col_widths, repeatRows=1)
-
-    n_data  = len(siswa_list)
-    n_total = n_data + 1
-
-    ts = [
-        ("BACKGROUND",    (0, 0), (-1, 0),  C_GREEN),
-        ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.white),
-        ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
-        ("FONTSIZE",      (0, 0), (-1, 0),  6.5),
-        ("ALIGN",         (0, 0), (-1, 0),  "CENTER"),
-        ("VALIGN",        (0, 0), (-1, 0),  "MIDDLE"),
-        ("FONTNAME",      (0, 1), (-1, n_data),  "Helvetica"),
-        ("FONTSIZE",      (0, 1), (-1, n_data),  6.5),
-        ("ALIGN",         (0, 1), (0, n_data),   "CENTER"),
-        ("ALIGN",         (1, 1), (1, n_data),   "LEFT"),
-        ("ALIGN",         (2, 1), (-1, n_data),  "CENTER"),
-        ("VALIGN",        (0, 1), (-1, n_data),  "MIDDLE"),
-        ("ROWBACKGROUNDS",(0, 1), (-1, n_data),  [colors.white, C_LIGHT]),
-        ("BACKGROUND",    (0, n_total), (-1, n_total), C_TOTAL),
-        ("FONTNAME",      (0, n_total), (-1, n_total), "Helvetica-Bold"),
-        ("FONTSIZE",      (0, n_total), (-1, n_total), 6.5),
-        ("ALIGN",         (0, n_total), (-1, n_total), "CENTER"),
-        ("VALIGN",        (0, n_total), (-1, n_total), "MIDDLE"),
-        ("GRID",          (0, 0), (-1, -1), 0.3, C_BORDER),
+    tbl = Table(rows, colWidths=col_widths, repeatRows=2)
+    tbl.setStyle(TableStyle([
+        # merge header baris-1
+        ("SPAN", (0, 0),         (0, 1)),           # NO
+        ("SPAN", (1, 0),         (1, 1)),           # NAMA SISWA
+        ("SPAN", (2, 0),         (tgl_end, 0)),     # TANGGAL ABSENSI
+        ("SPAN", (tgl_end+1, 0), (tgl_end+1, 1)),  # S
+        ("SPAN", (tgl_end+2, 0), (tgl_end+2, 1)),  # I
+        ("SPAN", (tgl_end+3, 0), (tgl_end+3, 1)),  # A
+        ("SPAN", (tgl_end+4, 0), (tgl_end+4, 1)),  # Keterangan
+        # header style
+        ("FONTNAME",      (0, 0), (-1, 1),  "Helvetica-Bold"),
+        ("FONTSIZE",      (0, 0), (-1, 1),  6.5),
+        ("ALIGN",         (0, 0), (-1, 1),  "CENTER"),
+        ("VALIGN",        (0, 0), (-1, 1),  "MIDDLE"),
+        ("BACKGROUND",    (0, 0), (-1, 1),  C_WHITE),
+        # data rows
+        ("FONTNAME",      (0, 2), (-1, -1), "Helvetica"),
+        ("FONTSIZE",      (0, 2), (-1, -1), 6.5),
+        ("ALIGN",         (0, 2), (0, -1),  "CENTER"),
+        ("ALIGN",         (1, 2), (1, -1),  "LEFT"),
+        ("ALIGN",         (2, 2), (-1, -1), "CENTER"),
+        ("VALIGN",        (0, 2), (-1, -1), "MIDDLE"),
+        ("BACKGROUND",    (0, 2), (-1, -1), C_WHITE),
+        # grid
+        ("GRID",          (0, 0), (-1, -1), 0.5, C_BLACK),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("LEFTPADDING",   (0, 0), (-1, -1), 1),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 1),
-        ("ROWHEIGHT",     (0, 0), (-1, -1), 0.55 * cm),
-    ]
-    tbl.setStyle(TableStyle(ts))
-    elems.append(tbl)
-
-    elems.append(Spacer(1, 0.3 * cm))
-
-    ket_data = [[
-        Paragraph("<b>Keterangan:</b>  */ = Hadir &nbsp;&nbsp; S = Sakit &nbsp;&nbsp; I = Izin &nbsp;&nbsp; A = Alpha",
-                  ParagraphStyle("Ket", parent=styles["Normal"], fontSize=8)),
-        Paragraph(
-            f"<b>Hadir : {data.total_hadir}</b> &nbsp;&nbsp;&nbsp; "
-            f"<b>Sakit : {data.total_sakit}</b> &nbsp;&nbsp;&nbsp; "
-            f"<b>Izin : {data.total_izin}</b> &nbsp;&nbsp;&nbsp; "
-            f"<b>Alpha : {data.total_alpha}</b>",
-            ParagraphStyle("Rekap", parent=styles["Normal"], fontSize=8, alignment=1)),
-    ]]
-    ket_tbl = Table(ket_data, colWidths=[PAGE_W * 0.5, PAGE_W * 0.5])
-    ket_tbl.setStyle(TableStyle([
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("ROWHEIGHT",     (0, 0), (-1, -1), 0.52 * cm),
     ]))
-    elems.append(ket_tbl)
+    elems.append(tbl)
+    elems.append(Spacer(1, 0.4*cm))
 
-    elems.append(Spacer(1, 0.5 * cm))
-    ttd_data = [[
-        Paragraph("", styles["Normal"]),
-        Paragraph(
-            f"{nama_bulan} {tahun}<br/><br/>Kepala Sekolah<br/><br/><br/>"
-            f"(………………………………………)",
-            ParagraphStyle("TTD", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER)),
-    ]]
-    ttd_tbl = Table(ttd_data, colWidths=[PAGE_W * 0.75, PAGE_W * 0.25])
-    ttd_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    elems.append(ttd_tbl)
+    # ── Rekap kiri sejajar ujung kiri tabel, TTD mentok kanan ──
+    W_REKAP = W_NO + W_NAMA
+    rekap_data = [
+        [Paragraph(f"Hadir : {data.total_hadir}", st_rekap)],
+        [Paragraph(f"Sakit : {data.total_sakit}", st_rekap)],
+        [Paragraph(f"Izin  : {data.total_izin}",  st_rekap)],
+        [Paragraph(f"Alpha : {data.total_alpha}", st_rekap)],
+    ]
+    rekap_tbl = Table(rekap_data, colWidths=[W_REKAP])
+    rekap_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("TOPPADDING",    (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+    ]))
+
+    W_TTD = 5.0 * cm
+    W_MID = PAGE_W - W_REKAP - W_TTD
+
+    ttd_content = Paragraph(
+        f"{nama_bulan} {tahun}<br/><br/>"
+        f"Kepala Sekolah<br/><br/><br/>"
+        f"(………………………………………)",
+        ParagraphStyle("TTD", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER))
+
+    outer = Table(
+        [[rekap_tbl, Paragraph("", styles["Normal"]), ttd_content]],
+        colWidths=[W_REKAP, W_MID, W_TTD]
+    )
+    outer.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    elems.append(outer)
 
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()
 
-
-# =============================================================================
-# PDF Generator — Catatan Harian Siswa
-# =============================================================================
 
 def _generate_pdf_catatan(
     data: schemas.LaporanCatatanSiswaOut,
@@ -1645,10 +1646,7 @@ def _generate_pdf_catatan(
         topMargin=1.5*cm, bottomMargin=1.5*cm,
         leftMargin=2*cm,  rightMargin=2*cm,
     )
-    styles  = getSampleStyleSheet()
-    C_GREEN  = colors.HexColor("#2d6a4f")
-    C_LIGHT  = colors.HexColor("#f0f7f4")
-    C_BORDER = colors.HexColor("#b7d4c8")
+    styles = getSampleStyleSheet()
 
     NAMA_BULAN_ID = ["","Januari","Februari","Maret","April","Mei","Juni",
                      "Juli","Agustus","September","Oktober","November","Desember"]
@@ -1657,19 +1655,21 @@ def _generate_pdf_catatan(
         return f"{d.day:02d} {NAMA_BULAN_ID[d.month]} {d.year}"
 
     st_judul = ParagraphStyle("Judul", parent=styles["Heading1"],
-                              alignment=TA_CENTER, fontSize=13, spaceAfter=4, textColor=C_GREEN)
+                              alignment=TA_CENTER, fontSize=13, spaceAfter=4,
+                              textColor=colors.black)
     st_sub   = ParagraphStyle("Sub",   parent=styles["Normal"],
-                              alignment=TA_CENTER, fontSize=10, spaceAfter=2)
+                              alignment=TA_CENTER, fontSize=10, spaceAfter=2,
+                              textColor=colors.black)
     st_info  = ParagraphStyle("Info",  parent=styles["Normal"],
-                              fontSize=10, spaceAfter=2, leftIndent=20)
-    st_cell  = ParagraphStyle("Cell",  parent=styles["Normal"], fontSize=8, leading=11)
+                              fontSize=10, spaceAfter=4, leftIndent=0)
+    st_cell  = ParagraphStyle("Cell",  parent=styles["Normal"], fontSize=9, leading=12)
 
     elems = []
     elems.append(Paragraph("LAPORAN CATATAN HARIAN SISWA", st_judul))
-    elems.append(Paragraph("TK Qoulan Sadid", st_sub))
-    elems.append(Spacer(1, 0.3*cm))
-    elems.append(HRFlowable(width="100%", thickness=1, color=C_GREEN))
-    elems.append(Spacer(1, 0.3*cm))
+    elems.append(Paragraph("TK Qoulansadid", st_sub))
+    elems.append(Spacer(1, 0.2*cm))
+    elems.append(HRFlowable(width="100%", thickness=1, color=colors.black))
+    elems.append(Spacer(1, 0.5*cm))
     elems.append(Paragraph(f"Nama Siswa : {data.nama_siswa}", st_info))
     elems.append(Paragraph(f"Kelas      : {nama_kelas}", st_info))
     elems.append(Paragraph(
@@ -1681,14 +1681,17 @@ def _generate_pdf_catatan(
     if not data.catatan:
         st_empty = ParagraphStyle("Empty", parent=styles["Normal"],
                                   alignment=TA_CENTER, fontSize=10,
-                                  textColor=colors.HexColor("#999999"))
+                                  textColor=colors.black)
         elems.append(Paragraph("Tidak ada catatan harian dalam periode ini.", st_empty))
     else:
+        st_header = ParagraphStyle("Header", parent=styles["Normal"],
+                                   fontSize=9, leading=12,
+                                   fontName="Helvetica-Bold")
         rows = [
-            [Paragraph(h, st_cell) for h in ["No", "Tanggal", "Judul", "Catatan", "Saran"]]
+            [Paragraph(h, st_header) for h in ["N\no", "Tanggal", "Judul", "Catatan", "Saran"]]
         ]
         for i, catatan in enumerate(data.catatan, start=1):
-            tgl_str = (catatan.tanggal.strftime("%d-%m-%Y")
+            tgl_str = (catatan.tanggal.strftime("%d-%m-\n%Y")
                        if hasattr(catatan.tanggal, "strftime") else str(catatan.tanggal))
             rows.append([
                 Paragraph(str(i),               st_cell),
@@ -1700,22 +1703,25 @@ def _generate_pdf_catatan(
 
         tbl = Table(rows, colWidths=col_w, repeatRows=1)
         tbl.setStyle(TableStyle([
-            ("BACKGROUND",     (0, 0), (-1, 0),  C_GREEN),
-            ("TEXTCOLOR",      (0, 0), (-1, 0),  colors.white),
-            ("FONTNAME",       (0, 0), (-1, 0),  "Helvetica-Bold"),
-            ("FONTSIZE",       (0, 0), (-1, 0),  9),
-            ("ALIGN",          (0, 0), (-1, 0),  "CENTER"),
-            ("VALIGN",         (0, 0), (-1, -1), "TOP"),
-            ("FONTNAME",       (0, 1), (-1, -1), "Helvetica"),
-            ("FONTSIZE",       (0, 1), (-1, -1), 8),
-            ("ALIGN",          (0, 1), (1, -1),  "CENTER"),
-            ("ALIGN",          (2, 1), (-1, -1), "LEFT"),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, C_LIGHT]),
-            ("GRID",           (0, 0), (-1, -1), 0.5, C_BORDER),
-            ("TOPPADDING",     (0, 0), (-1, -1), 5),
-            ("BOTTOMPADDING",  (0, 0), (-1, -1), 5),
-            ("LEFTPADDING",    (0, 0), (-1, -1), 5),
-            ("RIGHTPADDING",   (0, 0), (-1, -1), 5),
+            # Header row — white background, bold text (already bold via style)
+            ("BACKGROUND",    (0, 0), (-1, 0),  colors.white),
+            ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.black),
+            ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
+            ("FONTSIZE",      (0, 0), (-1, 0),  9),
+            ("ALIGN",         (0, 0), (-1, 0),  "LEFT"),
+            # Data rows
+            ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+            ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
+            ("FONTSIZE",      (0, 1), (-1, -1), 9),
+            ("ALIGN",         (0, 1), (1, -1),  "CENTER"),
+            ("ALIGN",         (2, 1), (-1, -1), "LEFT"),
+            ("BACKGROUND",    (0, 1), (-1, -1), colors.white),
+            # Grid — plain black, thin
+            ("GRID",          (0, 0), (-1, -1), 0.5, colors.black),
+            ("TOPPADDING",    (0, 0), (-1, -1), 5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+            ("LEFTPADDING",   (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING",  (0, 0), (-1, -1), 5),
         ]))
         elems.append(tbl)
 

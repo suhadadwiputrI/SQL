@@ -341,9 +341,9 @@ async def create_akun_with_role(request: Request, db: Session = Depends(get_db),
 
 @app.post("/reset-password/", response_model=schemas.ResetPasswordOut, status_code=201, tags=["Reset Password"])
 def create_reset_password(rp: schemas.ResetPasswordCreate, db: Session = Depends(get_db)):
-    if not crud.get_akun(db, rp.id):
+    if not crud.get_akun(db, rp.id_akun):                 
         raise HTTPException(status_code=404, detail="Akun tidak ditemukan")
-    if crud.get_reset_password_by_akun(db, rp.id):
+    if crud.get_reset_password_by_akun(db, rp.id_akun):  
         raise HTTPException(status_code=400, detail="Pertanyaan keamanan sudah ada")
     return crud.create_reset_password(db, rp)
 

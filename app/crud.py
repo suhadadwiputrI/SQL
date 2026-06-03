@@ -572,7 +572,7 @@ def kirim_notif_pesan(
         isi_pesan = payload_ws.get("isi_pesan", "") if payload_ws else ""
         role_penerima = akun_penerima.role.value if akun_penerima.role else ""
         kirim_fcm(
-            fcm_token = akun_penerima.device_id,
+            fcm_token = str(akun_penerima.id), 
             tipe      = "pesan",
             judul     = f"Pesan dari {nama_pengirim}",
             isi       = isi_pesan,
@@ -643,9 +643,9 @@ def kirim_notif_absensi_batch(
 
         # ── FCM (app offline) ─────────────────────────────────────────────────
         akun_wali = get_akun(db, wali.id_akun)
-        if akun_wali and akun_wali.device_id:
+        if akun_wali:
             kirim_fcm(
-                fcm_token = akun_wali.device_id,
+                fcm_token = str(akun_wali.id),
                 tipe      = "absensi",
                 judul     = "Absensi Diperbarui",
                 isi       = (f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
@@ -746,9 +746,9 @@ def kirim_notif_catatan(
 
         # ── FCM (app offline) ─────────────────────────────────────────────────
         akun_wali = get_akun(db, wali.id_akun)
-        if akun_wali and akun_wali.device_id:
+        if akun_wali:
             kirim_fcm(
-                fcm_token = akun_wali.device_id,
+                fcm_token = str(akun_wali.id),
                 tipe      = "catatan",
                 judul     = judul_notif,
                 isi       = isi_notif,
@@ -850,9 +850,9 @@ def kirim_notif_laporan_terverifikasi(
 
         # ── FCM (app offline) ─────────────────────────────────────────────────
         akun_wali = get_akun(db, wali.id_akun)
-        if akun_wali and akun_wali.device_id:
+        if akun_wali:
             kirim_fcm(
-                fcm_token = akun_wali.device_id,
+                fcm_token = str(akun_wali.id),
                 tipe      = "laporan",
                 judul     = judul_notif,
                 isi       = isi_notif,

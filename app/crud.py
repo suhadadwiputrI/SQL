@@ -70,28 +70,33 @@ def authenticate_akun(db: Session, username: str, password: str) -> Optional[mod
 _firebase_initialized = False
 
 def init_firebase():
-    """
-    Inisialisasi Firebase Admin SDK.
-    Panggil sekali dari startup event di main.py.
-    Kalau file serviceAccountKey.json tidak ada, FCM dinonaktifkan
-    tanpa crash — WebSocket tetap jalan normal.
-    """
     global _firebase_initialized
     if _firebase_initialized:
         return
     try:
         import firebase_admin
         from firebase_admin import credentials
-        cred = credentials.Certificate("serviceAccountKey.json")
-        firebase_admin.initialize_app(cred)
-        _firebase_initialized = True
-        logger.info("Firebase Admin SDK berhasil diinisialisasi")
-    except FileNotFoundError:
-        logger.warning(
-            "serviceAccountKey.json tidak ditemukan — "
-            "FCM push notification dinonaktifkan. "
-            "WebSocket tetap berjalan normal."
-        )
+        import os, json
+
+        # Prioritas 1: env variable (untuk Railway/production)
+        service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
+        if service_account_json:
+            cred = credentials.Certificate(json.loads(service_account_json))
+            firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("Firebase init dari ENV berhasil")
+            return
+
+        # Prioritas 2: file lokal (untuk dev)
+        if os.path.exists("serviceAccountKey.json"):
+            cred = credentials.Certificate("serviceAccountKey.json")
+            firebase_admin.initialize_app(cred)
+            _firebase_initialized = True
+            logger.info("Firebase init dari FILE berhasil")
+            return
+
+        logger.warning("FIREBASE_SERVICE_ACCOUNT tidak ditemukan — FCM dinonaktifkan")
+
     except Exception as e:
         logger.warning(f"Firebase init gagal: {e} — FCM dinonaktifkan")
 

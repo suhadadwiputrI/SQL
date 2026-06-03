@@ -10,3 +10,5 @@ alembic==1.13.3
 bcrypt==3.2.2
 PyJWT==2.8.0
 reportlab==4.2.2
+requests
+firebase-admin==6.5.0

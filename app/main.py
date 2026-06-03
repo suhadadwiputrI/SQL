@@ -155,6 +155,8 @@ def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int)
 
 @app.on_event("startup")
 def seed_master_admin():
+    crud.init_firebase()  
+    
     db = next(get_db())
     try:
         if not crud.get_akun_by_username(db, "TkQoulansadid"):
@@ -166,7 +168,6 @@ def seed_master_admin():
         db.commit()
     finally:
         db.close()
-
 
 # =============================================================================
 # Root

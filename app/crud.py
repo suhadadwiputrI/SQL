@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from typing import Optional, List
 
 from passlib.context import CryptContext
@@ -8,10 +9,12 @@ from sqlalchemy import extract, func
 from app import models, schemas
 from datetime import date
 from sqlalchemy import and_, func
- 
- 
+
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 DEFAULT_PASSWORD = "tkqoulansadid"
+
+logger = logging.getLogger(__name__)
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -46,6 +49,92 @@ def authenticate_akun(db: Session, username: str, password: str) -> Optional[mod
     if akun and verify_password(password, akun.password):
         return akun
     return None
+
+
+# ─── FCM Push Notification ────────────────────────────────────────────────────
+# Hanya aktif saat app OFFLINE / tidak di foreground.
+# Saat app online, WebSocket + Dashboard yang handle.
+#
+# Prasyarat:
+#   1. pip install firebase-admin
+#   2. Taruh serviceAccountKey.json di root project backend
+#   3. Panggil init_firebase() di @app.on_event("startup") di main.py
+#
+# Contoh di main.py:
+#   from app.crud import init_firebase
+#   @app.on_event("startup")
+#   def seed_master_admin():
+#       init_firebase()
+#       ...
+
+_firebase_initialized = False
+
+def init_firebase():
+    """
+    Inisialisasi Firebase Admin SDK.
+    Panggil sekali dari startup event di main.py.
+    Kalau file serviceAccountKey.json tidak ada, FCM dinonaktifkan
+    tanpa crash — WebSocket tetap jalan normal.
+    """
+    global _firebase_initialized
+    if _firebase_initialized:
+        return
+    try:
+        import firebase_admin
+        from firebase_admin import credentials
+        cred = credentials.Certificate("serviceAccountKey.json")
+        firebase_admin.initialize_app(cred)
+        _firebase_initialized = True
+        logger.info("Firebase Admin SDK berhasil diinisialisasi")
+    except FileNotFoundError:
+        logger.warning(
+            "serviceAccountKey.json tidak ditemukan — "
+            "FCM push notification dinonaktifkan. "
+            "WebSocket tetap berjalan normal."
+        )
+    except Exception as e:
+        logger.warning(f"Firebase init gagal: {e} — FCM dinonaktifkan")
+
+
+def kirim_fcm(fcm_token: str, tipe: str, judul: str, isi: str,
+              role: str = "") -> bool:
+    """
+    Kirim push notification ke satu perangkat via FCM.
+    Pakai DATA MESSAGE agar MyFirebaseMessagingService selalu dipanggil
+    meski app mati.
+
+    Args:
+        fcm_token : device_id dari tabel Akun (= FCM token yang dikirim Android saat login)
+        tipe      : "pesan" | "absensi" | "catatan" | "laporan"
+        judul     : judul notifikasi
+        isi       : isi/body notifikasi
+        role      : "guru" | "wali_siswa" — untuk routing ke Activity yang benar di Android
+    Returns:
+        True kalau berhasil dikirim, False kalau gagal / FCM tidak aktif
+    """
+    if not _firebase_initialized or not fcm_token:
+        return False
+    try:
+        from firebase_admin import messaging
+        message = messaging.Message(
+            data={
+                "tipe" : tipe,
+                "judul": judul,
+                "isi"  : isi,
+                "role" : role,
+            },
+            token=fcm_token,
+            android=messaging.AndroidConfig(
+                priority="high",   # bangunkan device meski doze mode
+                ttl=86400,         # simpan 24 jam kalau device sedang mati
+            ),
+        )
+        messaging.send(message)
+        return True
+    except Exception as e:
+        # Token kadaluarsa / tidak valid → log warning, jangan crash server
+        logger.warning(f"FCM gagal ke token {fcm_token[:20]}...: {e}")
+        return False
 
 
 # ─── Akun ─────────────────────────────────────────────────────────────────────
@@ -426,6 +515,7 @@ def _build_catatan_out(catatan: models.CatatanHarian) -> schemas.CatatanHarianOu
         nama_kelas=catatan.kelas.nama_kelas if catatan.kelas else None,
     )
 
+
 # ─── Absensi ──────────────────────────────────────────────────────────────────
 
 def get_absensi(db: Session, id_absensi: int) -> Optional[models.Absensi]:
@@ -468,35 +558,55 @@ def _buat_notif(db: Session, id: int, judul: str, pesan: str,
     db.add(obj)
     return obj
 
+
+# ─── Titik 1: Notif Pesan ─────────────────────────────────────────────────────
+
 def kirim_notif_pesan(
     db: Session,
     id_akun_penerima: int,
     nama_pengirim: str,
-    id_pengirim: int,          # ← TAMBAH: id akun pengirim (bukan id_pesan)
-    id_pesan: int,             # ← tetap ada untuk keperluan lain / WS payload
+    id_pengirim: int,
+    id_pesan: int,
     payload_ws: dict = None,
 ) -> models.Notifikasi:
     from app.websocket_manager import ws_manager
 
-    # Simpan id_pengirim sebagai ref_id agar Android bisa baca getIdPengirim()
     notif = _buat_notif(
         db,
         id_akun_penerima,
         f"Pesan dari {nama_pengirim}",
         f"Pesan baru dari {nama_pengirim}",
         models.TipeNotifEnum.pesan,
-        id_pengirim,           # ← sebelumnya: id_pesan
+        id_pengirim,
     )
     db.commit()
     db.refresh(notif)
 
+    # ── WebSocket (app online) ────────────────────────────────────────────────
     if payload_ws and ws_manager.aktif(id_akun_penerima):
         try:
             loop = asyncio.get_running_loop()
             loop.create_task(ws_manager.kirim_ke_akun(id_akun_penerima, payload_ws))
         except RuntimeError:
             pass
+
+    # ── FCM (app offline) ─────────────────────────────────────────────────────
+    akun_penerima = get_akun(db, id_akun_penerima)
+    if akun_penerima and akun_penerima.device_id:
+        isi_pesan = payload_ws.get("isi_pesan", "") if payload_ws else ""
+        role_penerima = akun_penerima.role.value if akun_penerima.role else ""
+        kirim_fcm(
+            fcm_token = akun_penerima.device_id,
+            tipe      = "pesan",
+            judul     = f"Pesan dari {nama_pengirim}",
+            isi       = isi_pesan,
+            role      = role_penerima,
+        )
+
     return notif
+
+
+# ─── Titik 2: Notif Absensi Batch ────────────────────────────────────────────
 
 def kirim_notif_absensi_batch(
     db: Session,
@@ -504,7 +614,7 @@ def kirim_notif_absensi_batch(
     tanggal_str: str,
     nama_guru: str,
     id_absensi_ref: int,
-    hasil_absensi: list = None,   # ← tambah parameter ini
+    hasil_absensi: list = None,
 ) -> None:
     from app.websocket_manager import ws_manager
 
@@ -515,12 +625,11 @@ def kirim_notif_absensi_batch(
     if not id_wali_set:
         return
 
-    wali_map     = {w.id_wali_siswa: w for w in
-                    db.query(models.WaliSiswa)
-                      .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+    wali_map      = {w.id_wali_siswa: w for w in
+                     db.query(models.WaliSiswa)
+                       .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
     siswa_by_wali = {s.id_wali_siswa: s for s in siswa_list}
 
-    # Buat map id_siswa → absensi untuk lookup status per siswa
     absensi_by_siswa = {}
     if hasil_absensi:
         for ab in hasil_absensi:
@@ -531,13 +640,13 @@ def kirim_notif_absensi_batch(
         if not siswa:
             continue
 
-        # ── Simpan notifikasi ke database ─────────────────────────────────
+        # ── DB notif ──────────────────────────────────────────────────────────
         _buat_notif(db, wali.id_akun, "Absensi Diperbarui",
                     f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
                     f"telah diperbarui.",
                     models.TipeNotifEnum.absensi, id_absensi_ref)
 
-        # ── Kirim WebSocket event ke wali ─────────────────────────────────
+        # ── WebSocket (app online) ────────────────────────────────────────────
         ab = absensi_by_siswa.get(siswa.id_siswa)
         if ab and ws_manager.aktif(wali.id_akun):
             payload = {
@@ -556,9 +665,22 @@ def kirim_notif_absensi_batch(
             except RuntimeError:
                 pass
 
-    db.commit()  # Bug #4 fix: flush() → commit() agar notifikasi absensi tersimpan
+        # ── FCM (app offline) ─────────────────────────────────────────────────
+        akun_wali = get_akun(db, wali.id_akun)
+        if akun_wali and akun_wali.device_id:
+            kirim_fcm(
+                fcm_token = akun_wali.device_id,
+                tipe      = "absensi",
+                judul     = "Absensi Diperbarui",
+                isi       = (f"Absensi {siswa.nama_siswa} tanggal {tanggal_str} "
+                             f"telah diperbarui"),
+                role      = "wali_siswa",
+            )
+
+    db.commit()
 
 
+# ─── Titik 3: Notif Catatan ───────────────────────────────────────────────────
 
 def kirim_notif_catatan(
     db: Session,
@@ -570,12 +692,11 @@ def kirim_notif_catatan(
     - semua_kelas : semua wali siswa aktif
     - satu_kelas  : semua wali siswa di kelas tersebut
     - satu_siswa  : satu wali dari siswa tersebut
-    Juga kirim WebSocket event catatan_baru agar client bisa update realtime.
     """
     from app.websocket_manager import ws_manager
 
-    target = catatan.target
-    pasangan = []
+    target   = catatan.target
+    pasangan = []  # list of (wali, siswa)
 
     if target == models.TargetCatatanEnum.satu_siswa:
         if catatan.id_siswa:
@@ -591,9 +712,9 @@ def kirim_notif_catatan(
                           .filter(models.Siswa.id_kelas == catatan.id_kelas,
                                   models.Siswa.id_wali_siswa.isnot(None)).all())
             id_wali_set = {s.id_wali_siswa for s in siswa_list}
-            wali_map = {w.id_wali_siswa: w for w in
-                        db.query(models.WaliSiswa)
-                          .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+            wali_map    = {w.id_wali_siswa: w for w in
+                           db.query(models.WaliSiswa)
+                             .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
             siswa_by_wali = {s.id_wali_siswa: s for s in siswa_list}
             for id_ws, wali in wali_map.items():
                 siswa = siswa_by_wali.get(id_ws)
@@ -604,9 +725,9 @@ def kirim_notif_catatan(
         siswa_list = (db.query(models.Siswa)
                       .filter(models.Siswa.id_wali_siswa.isnot(None)).all())
         id_wali_set = {s.id_wali_siswa for s in siswa_list}
-        wali_map = {w.id_wali_siswa: w for w in
-                    db.query(models.WaliSiswa)
-                      .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
+        wali_map    = {w.id_wali_siswa: w for w in
+                       db.query(models.WaliSiswa)
+                         .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set)).all()}
         siswa_by_wali = {s.id_wali_siswa: s for s in siswa_list}
         for id_ws, wali in wali_map.items():
             siswa = siswa_by_wali.get(id_ws)
@@ -617,13 +738,19 @@ def kirim_notif_catatan(
         return
 
     for wali, siswa in pasangan:
+        judul_notif = f"Catatan: {catatan.judul}"
+        isi_notif   = f"Guru {nama_guru} membuat catatan untuk {siswa.nama_siswa}"
+
+        # ── DB notif ──────────────────────────────────────────────────────────
         _buat_notif(
             db, wali.id_akun,
-            f"Catatan: {catatan.judul}",
-            f"Guru {nama_guru} membuat catatan untuk {siswa.nama_siswa}",
+            judul_notif,
+            isi_notif,
             models.TipeNotifEnum.catatan,
             catatan.id_catatan,
         )
+
+        # ── WebSocket (app online) ────────────────────────────────────────────
         if ws_manager.aktif(wali.id_akun):
             payload = {
                 "type": "catatan_baru",
@@ -640,8 +767,23 @@ def kirim_notif_catatan(
                 loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
             except RuntimeError:
                 pass
+
+        # ── FCM (app offline) ─────────────────────────────────────────────────
+        akun_wali = get_akun(db, wali.id_akun)
+        if akun_wali and akun_wali.device_id:
+            kirim_fcm(
+                fcm_token = akun_wali.device_id,
+                tipe      = "catatan",
+                judul     = judul_notif,
+                isi       = isi_notif,
+                role      = "wali_siswa",
+            )
+
     db.commit()
-    
+
+
+# ─── Titik 4: Notif Laporan Terverifikasi ─────────────────────────────────────
+
 def kirim_notif_laporan_terverifikasi(
     db: "Session",
     laporan: "models.Laporan",
@@ -653,7 +795,7 @@ def kirim_notif_laporan_terverifikasi(
     if laporan.id_kelas is None:
         return
 
-    # ── CEK: apakah laporan pasangan (periode + kelas yang sama) sudah verif? ──
+    # Kirim HANYA jika kedua jenis laporan (absensi + catatan) sudah verif
     semua_periode = (
         db.query(models.Laporan)
         .filter(
@@ -663,20 +805,15 @@ def kirim_notif_laporan_terverifikasi(
         )
         .all()
     )
-
     jenis_terverif = {l.jenis_laporan.value for l in semua_periode}
-
-    # Kirim notif HANYA jika keduanya sudah verif
     if "absensi" not in jenis_terverif or "catatan" not in jenis_terverif:
-        return  # ← belum lengkap, tidak kirim notif
+        return
 
-    # ── Ambil nama guru dari laporan yang baru saja diverif ──
     try:
         nama_guru = laporan.guru.akun.nama if laporan.guru and laporan.guru.akun else "Guru"
     except Exception:
         nama_guru = "Guru"
 
-    # ── Kirim notif ke semua wali di kelas ──
     siswa_list = (
         db.query(models.Siswa)
         .filter(
@@ -689,7 +826,7 @@ def kirim_notif_laporan_terverifikasi(
         return
 
     id_wali_set = {s.id_wali_siswa for s in siswa_list}
-    wali_map = {
+    wali_map    = {
         w.id_wali_siswa: w
         for w in db.query(models.WaliSiswa)
         .filter(models.WaliSiswa.id_wali_siswa.in_(id_wali_set))
@@ -713,17 +850,21 @@ def kirim_notif_laporan_terverifikasi(
         }
     }
 
+    judul_notif = f"Laporan {laporan.periode} Tersedia"
+    isi_notif   = f"Laporan absensi & catatan bulan {laporan.periode} telah dibuat"
+
     for id_ws, wali in wali_map.items():
+        # ── DB notif ──────────────────────────────────────────────────────────
         _buat_notif(
             db,
             wali.id_akun,
-            f"Laporan {laporan.periode} Tersedia",
-            f"Laporan absensi & catatan bulan {laporan.periode} "
-            f"telah dibuat.",
+            judul_notif,
+            isi_notif,
             models.TipeNotifEnum.laporan,
             laporan.id_laporan,
         )
 
+        # ── WebSocket (app online) ────────────────────────────────────────────
         if ws_manager.aktif(wali.id_akun):
             try:
                 loop = asyncio.get_running_loop()
@@ -731,7 +872,21 @@ def kirim_notif_laporan_terverifikasi(
             except RuntimeError:
                 pass
 
+        # ── FCM (app offline) ─────────────────────────────────────────────────
+        akun_wali = get_akun(db, wali.id_akun)
+        if akun_wali and akun_wali.device_id:
+            kirim_fcm(
+                fcm_token = akun_wali.device_id,
+                tipe      = "laporan",
+                judul     = judul_notif,
+                isi       = isi_notif,
+                role      = "wali_siswa",
+            )
+
     db.commit()
+
+
+# ─── Notifikasi DB helpers ────────────────────────────────────────────────────
 
 def get_notifikasi_by_akun(db: Session, id: int,
                            skip=0, limit=50) -> List[models.Notifikasi]:
@@ -758,18 +913,15 @@ def tandai_notif_dibaca(db: Session, id: int,
     db.commit()
     return len(rows)
 
+
 # ─── Laporan Otomatis ─────────────────────────────────────────────────────────
- 
+
 def get_ringkasan_absensi_siswa(
     db: Session,
     id_siswa: int,
     bulan: int,
     tahun: int,
 ) -> dict:
-    """
-    Hitung jumlah hadir/sakit/izin/alpha satu siswa dalam satu bulan.
-    Return dict siap pakai (bukan ORM object).
-    """
     rows = (
         db.query(models.Absensi.status, func.count(models.Absensi.id_absensi))
         .filter(
@@ -785,8 +937,8 @@ def get_ringkasan_absensi_siswa(
         result[status.value] = jumlah
     result["total_hari"] = sum(result.values())
     return result
- 
- 
+
+
 def get_laporan_otomatis_siswa(
     db: Session,
     id_siswa: int,
@@ -794,21 +946,13 @@ def get_laporan_otomatis_siswa(
     tahun: int,
     limit_catatan: int = 20,
 ) -> Optional[schemas.LaporanSiswaOut]:
-    """
-    Gabungkan ringkasan absensi + catatan harian untuk satu siswa.
-    Return LaporanSiswaOut atau None jika siswa tidak ditemukan.
-    """
     siswa = db.get(models.Siswa, id_siswa)
     if not siswa:
         return None
- 
-    # Ambil kelas
+
     nama_kelas = siswa.kelas.nama_kelas if siswa.kelas else None
- 
-    # Ringkasan absensi
-    rekap = get_ringkasan_absensi_siswa(db, id_siswa, bulan, tahun)
- 
-    # Catatan harian yang relevan (satu_siswa ATAU satu_kelas ATAU semua_kelas)
+    rekap      = get_ringkasan_absensi_siswa(db, id_siswa, bulan, tahun)
+
     from sqlalchemy import or_, and_
     conds = [
         models.CatatanHarian.target == models.TargetCatatanEnum.semua_kelas,
@@ -824,7 +968,7 @@ def get_laporan_otomatis_siswa(
                 models.CatatanHarian.id_kelas == siswa.id_kelas,
             )
         )
- 
+
     catatan_list = (
         db.query(models.CatatanHarian)
         .filter(
@@ -836,7 +980,7 @@ def get_laporan_otomatis_siswa(
         .limit(limit_catatan)
         .all()
     )
- 
+
     total_catatan = (
         db.query(func.count(models.CatatanHarian.id_catatan))
         .filter(
@@ -846,9 +990,9 @@ def get_laporan_otomatis_siswa(
         )
         .scalar()
     )
- 
+
     catatan_out = [_build_catatan_out(c) for c in catatan_list]
- 
+
     return schemas.LaporanSiswaOut(
         id_siswa=siswa.id_siswa,
         nama_siswa=siswa.nama_siswa,
@@ -859,39 +1003,35 @@ def get_laporan_otomatis_siswa(
         catatan=catatan_out,
         total_catatan=total_catatan or 0,
     )
- 
- 
+
+
 def get_laporan_otomatis_kelas(
     db: Session,
     id_kelas: int,
     bulan: int,
     tahun: int,
 ) -> Optional[schemas.LaporanKelasOut]:
-    """
-    Ringkasan absensi semua siswa di satu kelas untuk satu bulan.
-    Return LaporanKelasOut atau None jika kelas tidak ditemukan.
-    """
     kelas = db.get(models.Kelas, id_kelas)
     if not kelas:
         return None
- 
+
     siswa_list = (
         db.query(models.Siswa)
         .filter(models.Siswa.id_kelas == id_kelas)
         .order_by(models.Siswa.nama_siswa)
         .all()
     )
- 
+
     detail_siswa = []
     total_hadir = total_sakit = total_izin = total_alpha = 0
- 
+
     for siswa in siswa_list:
         rekap = get_ringkasan_absensi_siswa(db, siswa.id_siswa, bulan, tahun)
         total_hadir += rekap["hadir"]
         total_sakit += rekap["sakit"]
         total_izin  += rekap["izin"]
         total_alpha += rekap["alpha"]
- 
+
         detail_siswa.append(
             schemas.RingkasanAbsensiSiswaOut(
                 id_siswa=siswa.id_siswa,
@@ -899,7 +1039,7 @@ def get_laporan_otomatis_kelas(
                 **rekap,
             )
         )
- 
+
     return schemas.LaporanKelasOut(
         id_kelas=id_kelas,
         nama_kelas=kelas.nama_kelas,
@@ -912,7 +1052,8 @@ def get_laporan_otomatis_kelas(
         total_alpha=total_alpha,
         siswa=detail_siswa,
     )
-    
+
+
 # ─── Laporan Manual Guru ──────────────────────────────────────────────────────
 
 def get_laporan(db: Session, id_laporan: int) -> Optional[models.Laporan]:
@@ -940,7 +1081,6 @@ def get_all_laporan(
     skip: int = 0,
     limit: int = 100,
 ) -> List[models.Laporan]:
-    """Ambil semua laporan (untuk Admin)."""
     return (
         db.query(models.Laporan)
         .order_by(models.Laporan.tanggal_dibuat.desc())
@@ -955,13 +1095,6 @@ def create_laporan(
     data: schemas.LaporanCreate,
     id_guru: int,
 ) -> models.Laporan:
-    """
-    Buat laporan baru oleh guru.
-    - id_kelas   : dari request body
-    - id_guru    : dari JWT (injected di endpoint)
-    - status     : default 'menunggu_verifikasi'
-    - created_at : diisi otomatis oleh DB (server_default)
-    """
     obj = models.Laporan(
         id_kelas       = data.id_kelas,
         id_guru        = id_guru,
@@ -973,6 +1106,7 @@ def create_laporan(
     )
     db.add(obj)
     return _commit_refresh(db, obj)
+
 
 def verifikasi_laporan(
     db: Session,
@@ -995,9 +1129,6 @@ def verifikasi_laporan(
         db.rollback()
         raise e
 
-    # Query ulang dengan joinedload agar relasi kelas & guru.akun
-    # tersedia saat _build_laporan_out mengaksesnya — db.refresh()
-    # tidak me-refresh relasi yang sudah expire setelah commit.
     return db.query(models.Laporan).options(
         joinedload(models.Laporan.kelas),
         joinedload(models.Laporan.guru).joinedload(models.Guru.akun),
@@ -1039,7 +1170,6 @@ def _build_laporan_out(lap: models.Laporan) -> schemas.LaporanOut:
 
 
 def _hitung_statistik_laporan(data: list) -> dict:
-    """Helper: hitung total_selesai dan total_belum dari list Laporan."""
     total_selesai = sum(
         1 for l in data
         if l.status == models.StatusLaporanEnum.verifikasi
@@ -1050,18 +1180,15 @@ def _hitung_statistik_laporan(data: list) -> dict:
         "total_belum":   len(data) - total_selesai,
     }
 
+
 # ─── Rekap Absensi Siswa (range tanggal) ──────────────────────────────────────
- 
+
 def get_rekap_absensi_siswa_range(
     db: Session,
     id_siswa: int,
     tanggal_awal: date,
     tanggal_akhir: date,
 ) -> dict:
-    """
-    Hitung hadir/sakit/izin/alpha satu siswa dalam rentang tanggal.
-    Return dict langsung (bukan ORM object).
-    """
     rows = (
         db.query(models.Absensi.status, func.count(models.Absensi.id_absensi))
         .filter(
@@ -1077,8 +1204,8 @@ def get_rekap_absensi_siswa_range(
         result[status_val.value] = jumlah
     result["total_hari"] = sum(result.values())
     return result
- 
- 
+
+
 # ─── Detail Absensi Harian Siswa (range tanggal) ─────────────────────────────
 
 def get_detail_absensi_siswa_range(
@@ -1087,10 +1214,6 @@ def get_detail_absensi_siswa_range(
     tanggal_awal: date,
     tanggal_akhir: date,
 ) -> List[models.Absensi]:
-    """
-    Ambil baris absensi satu siswa dalam rentang tanggal, urut ascending.
-    Dipakai untuk PDF wali siswa (tampil per hari, bukan hanya rekap).
-    """
     return (
         db.query(models.Absensi)
         .filter(
@@ -1103,25 +1226,17 @@ def get_detail_absensi_siswa_range(
     )
 
 
-# ─── Catatan Harian Siswa (range tanggal, hanya target satu_siswa) ────────────
- 
+# ─── Catatan Harian Siswa (range tanggal) ─────────────────────────────────────
+
 def get_catatan_siswa_range(
     db: Session,
     id_siswa: int,
     tanggal_awal: date,
     tanggal_akhir: date,
 ) -> List[models.CatatanHarian]:
-    """
-    Ambil catatan harian satu siswa dalam rentang tanggal.
-    Mencakup:
-      - target = 'satu_siswa' AND id_siswa cocok
-      - target = 'satu_kelas'  AND id_kelas cocok dengan kelas siswa
-    Diurutkan ascending berdasarkan tanggal.
-    """
     from sqlalchemy import or_, and_
 
-    # Ambil kelas siswa untuk filter satu_kelas
-    siswa = db.get(models.Siswa, id_siswa)
+    siswa    = db.get(models.Siswa, id_siswa)
     id_kelas = siswa.id_kelas if siswa else None
 
     conds = [
@@ -1148,46 +1263,38 @@ def get_catatan_siswa_range(
         .order_by(models.CatatanHarian.tanggal.asc())
         .all()
     )
- 
- 
+
+
 # ─── Daftar Siswa dalam Kelas ──────────────────────────────────────────────────
- 
+
 def get_siswa_by_kelas(
     db: Session,
     id_kelas: int,
 ) -> List[models.Siswa]:
-    """
-    Ambil semua siswa dalam satu kelas, diurutkan berdasarkan nama.
-    """
     return (
         db.query(models.Siswa)
         .filter(models.Siswa.id_kelas == id_kelas)
         .order_by(models.Siswa.nama_siswa)
         .all()
     )
- 
- 
+
+
 # ─── Laporan Absensi Kelas (range tanggal) ────────────────────────────────────
- 
+
 def get_laporan_absensi_kelas_range(
     db: Session,
     id_kelas: int,
     tanggal_awal: date,
     tanggal_akhir: date,
 ) -> Optional[schemas.LaporanAbsensiKelasOut]:
-    """
-    Rekap absensi seluruh siswa dalam satu kelas berdasarkan rentang tanggal.
-    Return LaporanAbsensiKelasOut atau None jika kelas tidak ditemukan.
-    """
     kelas = db.get(models.Kelas, id_kelas)
     if not kelas:
         return None
- 
-    siswa_list = get_siswa_by_kelas(db, id_kelas)
- 
+
+    siswa_list  = get_siswa_by_kelas(db, id_kelas)
     detail_siswa = []
     total_hadir = total_sakit = total_izin = total_alpha = 0
- 
+
     for siswa in siswa_list:
         rekap = get_rekap_absensi_siswa_range(
             db, siswa.id_siswa, tanggal_awal, tanggal_akhir
@@ -1196,12 +1303,11 @@ def get_laporan_absensi_kelas_range(
         total_sakit += rekap["sakit"]
         total_izin  += rekap["izin"]
         total_alpha += rekap["alpha"]
- 
+
         detail_siswa.append(
             schemas.RingkasanAbsensiSiswaRangeOut(
                 id_siswa   = siswa.id_siswa,
                 nama_siswa = siswa.nama_siswa,
-                # BUG FIX #2: isi nisn langsung dari model siswa
                 nisn       = siswa.nisn or "",
                 hadir      = rekap["hadir"],
                 sakit      = rekap["sakit"],
@@ -1210,7 +1316,7 @@ def get_laporan_absensi_kelas_range(
                 total_hari = rekap["total_hari"],
             )
         )
- 
+
     return schemas.LaporanAbsensiKelasOut(
         id_kelas      = id_kelas,
         nama_kelas    = kelas.nama_kelas,
@@ -1223,32 +1329,27 @@ def get_laporan_absensi_kelas_range(
         total_alpha   = total_alpha,
         siswa         = detail_siswa,
     )
- 
- 
+
+
 # ─── Laporan Catatan Kelas (range tanggal, per siswa) ─────────────────────────
- 
+
 def get_laporan_catatan_kelas_range(
     db: Session,
     id_kelas: int,
     tanggal_awal: date,
     tanggal_akhir: date,
 ) -> Optional[schemas.LaporanCatatanKelasOut]:
-    """
-    Ambil catatan harian (target=satu_siswa) untuk seluruh siswa dalam satu kelas.
-    Return LaporanCatatanKelasOut atau None jika kelas tidak ditemukan.
-    """
     kelas = db.get(models.Kelas, id_kelas)
     if not kelas:
         return None
- 
+
     siswa_list = get_siswa_by_kelas(db, id_kelas)
- 
     data_siswa = []
+
     for siswa in siswa_list:
         catatan_list = get_catatan_siswa_range(
             db, siswa.id_siswa, tanggal_awal, tanggal_akhir
         )
- 
         catatan_out = [
             schemas.CatatanRangeOut(
                 id_catatan = c.id_catatan,
@@ -1258,18 +1359,16 @@ def get_laporan_catatan_kelas_range(
             )
             for c in catatan_list
         ]
- 
         data_siswa.append(
             schemas.LaporanCatatanSiswaOut(
                 id_siswa       = siswa.id_siswa,
                 nama_siswa     = siswa.nama_siswa,
-                # BUG FIX #2: isi nisn langsung dari model siswa
                 nisn           = siswa.nisn or "",
                 jumlah_catatan = len(catatan_out),
                 catatan        = catatan_out,
             )
         )
- 
+
     return schemas.LaporanCatatanKelasOut(
         id_kelas      = id_kelas,
         nama_kelas    = kelas.nama_kelas,

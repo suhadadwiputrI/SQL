@@ -89,21 +89,7 @@ def init_firebase():
 
 def kirim_fcm(fcm_token: str, tipe: str, judul: str, isi: str,
               role: str = "") -> bool:
-    """
-    Kirim push notification ke satu perangkat via FCM.
-    Pakai DATA MESSAGE agar MyFirebaseMessagingService selalu dipanggil
-    meski app mati.
-
-    Args:
-        fcm_token : device_id dari tabel Akun (= FCM token yang dikirim Android saat login)
-        tipe      : "pesan" | "absensi" | "catatan" | "laporan"
-        judul     : judul notifikasi
-        isi       : isi/body notifikasi
-        role      : "guru" | "wali_siswa" — untuk routing ke Activity yang benar di Android
-    Returns:
-        True kalau berhasil dikirim, False kalau gagal / FCM tidak aktif
-    """
-    if not _firebase_initialized or not fcm_token:
+    if not _firebase_initialized:
         return False
     try:
         from firebase_admin import messaging
@@ -114,17 +100,16 @@ def kirim_fcm(fcm_token: str, tipe: str, judul: str, isi: str,
                 "isi"  : isi,
                 "role" : role,
             },
-            token=fcm_token,
+            topic=f"user_{fcm_token}",  # fcm_token di sini = id akun (angka)
             android=messaging.AndroidConfig(
-                priority="high",   # bangunkan device meski doze mode
-                ttl=86400,         # simpan 24 jam kalau device sedang mati
+                priority="high",
+                ttl=86400,
             ),
         )
         messaging.send(message)
         return True
     except Exception as e:
-        # Token kadaluarsa / tidak valid → log warning, jangan crash server
-        logger.warning(f"FCM gagal ke token {fcm_token[:20]}...: {e}")
+        logger.warning(f"FCM gagal ke topic user_{fcm_token}: {e}")
         return False
 
 

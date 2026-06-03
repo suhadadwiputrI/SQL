@@ -51,21 +51,7 @@ def authenticate_akun(db: Session, username: str, password: str) -> Optional[mod
     return None
 
 
-# ─── FCM Push Notification ────────────────────────────────────────────────────
-# Hanya aktif saat app OFFLINE / tidak di foreground.
-# Saat app online, WebSocket + Dashboard yang handle.
-#
-# Prasyarat:
-#   1. pip install firebase-admin
-#   2. Taruh serviceAccountKey.json di root project backend
-#   3. Panggil init_firebase() di @app.on_event("startup") di main.py
-#
-# Contoh di main.py:
-#   from app.crud import init_firebase
-#   @app.on_event("startup")
-#   def seed_master_admin():
-#       init_firebase()
-#       ...
+
 
 _firebase_initialized = False
 

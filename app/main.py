@@ -697,17 +697,14 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
 @app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOut], tags=["Pesan"])
 def get_riwayat_percakapan(
     id_a: int, id_b: int,
-    after_id: Optional[int] = Query(None, description="Ambil pesan dengan id_pesan > after_id (polling/realtime)"),
-    before_id: Optional[int] = Query(None, description="Ambil pesan dengan id_pesan < before_id (load more ke atas)"),
-    order: str = Query("asc", description="Urutan hasil: 'asc' atau 'desc'"),
+    after_id: Optional[int] = Query(None),
+    before_id: Optional[int] = Query(None),
+    order: str = Query("asc"),
     skip: int = Query(0),
     limit: int = Query(30),
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
 ):
-    from fastapi.responses import Response as FastAPIResponse
-    import json as _json
-
     if current_user.id not in (id_a, id_b):
         raise HTTPException(status_code=403, detail="Akses ditolak")
 
@@ -715,21 +712,21 @@ def get_riwayat_percakapan(
         and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
         and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
     )
-    
+
     filter_tidak_dihapus = ~(
-    ((models.Pesan.id_pengirim == current_user.id) & models.Pesan.dihapus_pengirim) |
-    ((models.Pesan.id_penerima == current_user.id) & models.Pesan.dihapus_penerima)
+        ((models.Pesan.id_pengirim == current_user.id) & models.Pesan.dihapus_pengirim) |
+        ((models.Pesan.id_penerima == current_user.id) & models.Pesan.dihapus_penerima)
     )
 
-    # Polling: hanya pesan baru setelah after_id (selalu asc)
+    # Polling
     if after_id is not None:
         return (
             db.query(models.Pesan)
-            .filter(kedua_arah, models.Pesan.id_pesan > after_id)
+            .filter(kedua_arah, filter_tidak_dihapus, models.Pesan.id_pesan > after_id)
             .order_by(models.Pesan.waktu.asc()).all()
         )
 
-    # Tandai pesan dari lawan sebagai "diterima" (hanya saat fetch awal)
+    # Tandai diterima saat fetch awal
     if before_id is None:
         lawan_id = id_b if current_user.id == id_a else id_a
         db.query(models.Pesan).filter(
@@ -739,14 +736,11 @@ def get_riwayat_percakapan(
         ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
         db.commit()
 
-    # Hitung total untuk header X-Total-Count
-    total = db.query(models.Pesan).filter(kedua_arah).count()
+    total = db.query(models.Pesan).filter(kedua_arah, filter_tidak_dihapus).count()
 
-    q = db.query(models.Pesan).filter(kedua_arah)
+    q = db.query(models.Pesan).filter(kedua_arah, filter_tidak_dihapus)
 
     if before_id is not None:
-        # Load more ke atas: ambil N pesan tertua sebelum before_id
-        # Pakai DESC dulu untuk mendapat yang terdekat, lalu balik urutan di Python
         q = (
             q.filter(models.Pesan.id_pesan < before_id)
             .order_by(models.Pesan.id_pesan.desc())
@@ -759,12 +753,10 @@ def get_riwayat_percakapan(
 
     from fastapi.responses import JSONResponse
     from fastapi.encoders import jsonable_encoder
-    response = JSONResponse(
+    return JSONResponse(
         content=jsonable_encoder(hasil),
         headers={"X-Total-Count": str(total)},
     )
-    return response
-
 
 @app.put("/pesan/baca", tags=["Pesan"])
 def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):

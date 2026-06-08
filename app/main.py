@@ -811,21 +811,6 @@ def hapus_pesan_saya(
     pesan = db.get(models.Pesan, id_pesan)
     if not pesan:
         raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
-    if pesan.id_pengirim == current_user.id:
-        pesan.dihapus_pengirim = True
-    elif pesan.id_penerima == current_user.id:
-        pesan.dihapus_penerima = True
-    else:
-        raise HTTPException(status_code=403, detail="Akses ditolak")
-    db.commit()@app.delete("/pesan/{id_pesan}/saya", tags=["Pesan"])
-def hapus_pesan_saya(
-    id_pesan: int,
-    db: Session = Depends(get_db),
-    current_user: models.Akun = Depends(get_current_user),
-):
-    pesan = db.get(models.Pesan, id_pesan)
-    if not pesan:
-        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
 
     if pesan.id_pengirim == current_user.id:
         pesan.dihapus_pengirim = True
@@ -834,7 +819,6 @@ def hapus_pesan_saya(
     else:
         raise HTTPException(status_code=403, detail="Akses ditolak")
 
-    # Kalau kedua sisi sudah hapus → hapus permanent dari DB
     if pesan.dihapus_pengirim and pesan.dihapus_penerima:
         db.delete(pesan)
         db.commit()
@@ -842,7 +826,6 @@ def hapus_pesan_saya(
 
     db.commit()
     return {"message": "Pesan dihapus untuk Anda"}
-
 
 # ── Hapus untuk Semua ─────────────────────────────────────────────────────────
 

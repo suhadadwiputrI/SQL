@@ -681,13 +681,16 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
         id_pengirim=current_user.id,
         id_pesan=pesan.id_pesan,
         payload_ws={
-            "id_pesan":      pesan.id_pesan,
-            "id_pengirim":   pesan.id_pengirim,
-            "id_penerima":   pesan.id_penerima,
-            "isi_pesan":     pesan.isi_pesan,
-            "waktu":         str(pesan.waktu),
-            "waktu_millis":  int(pesan.waktu.timestamp() * 1000),
-            "nama_pengirim": current_user.nama,
+            "type": "pesan_baru",   # ← tambah ini
+            "data": {
+                "id_pesan":      pesan.id_pesan,
+                "id_pengirim":   pesan.id_pengirim,
+                "id_penerima":   pesan.id_penerima,
+                "isi_pesan":     pesan.isi_pesan,
+                "waktu":         str(pesan.waktu),
+                "waktu_millis":  int(pesan.waktu.timestamp() * 1000),
+                "nama_pengirim": current_user.nama,
+            }
         },
     )
     return pesan

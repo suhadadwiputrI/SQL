@@ -849,7 +849,13 @@ def get_daftar_percakapan(id: int, db: Session = Depends(get_db), current_user: 
         raise HTTPException(status_code=403, detail="Akses ditolak")
     semua_pesan = (
         db.query(models.Pesan)
-        .filter(or_(models.Pesan.id_pengirim == id, models.Pesan.id_penerima == id))
+        .filter(
+            or_(models.Pesan.id_pengirim == id, models.Pesan.id_penerima == id),
+            ~(
+                ((models.Pesan.id_pengirim == id) & models.Pesan.dihapus_pengirim) |
+                ((models.Pesan.id_penerima == id) & models.Pesan.dihapus_penerima)
+            )
+        )
         .order_by(models.Pesan.waktu.desc()).all()
     )
     hasil, sudah = [], set()
@@ -891,10 +897,16 @@ def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = De
         gid = guru.id_akun
         pesan_terakhir = (
             db.query(models.Pesan)
-            .filter(or_(
-                and_(models.Pesan.id_pengirim == current_user.id, models.Pesan.id_penerima == gid),
-                and_(models.Pesan.id_pengirim == gid, models.Pesan.id_penerima == current_user.id),
-            ))
+            .filter(
+                or_(
+                    and_(models.Pesan.id_pengirim == current_user.id, models.Pesan.id_penerima == gid),
+                    and_(models.Pesan.id_pengirim == gid, models.Pesan.id_penerima == current_user.id),
+                ),
+                ~(
+                    ((models.Pesan.id_pengirim == current_user.id) & models.Pesan.dihapus_pengirim) |
+                    ((models.Pesan.id_penerima == current_user.id) & models.Pesan.dihapus_penerima)
+                )
+            )
             .order_by(models.Pesan.waktu.desc()).first()
         )
         belum = db.query(models.Pesan).filter(
@@ -916,7 +928,6 @@ def get_semua_guru(db: Session = Depends(get_db), current_user: models.Akun = De
         ))
     hasil.sort(key=lambda x: x.waktu or datetime.min, reverse=True)
     return hasil
-
 
 @app.get("/pesan/semua-wali", response_model=List[schemas.WaliListItem], tags=["Pesan"])
 def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):

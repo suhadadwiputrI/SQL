@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, model_validator
 import json
 
 
-# ─── Enums (sesuai models.py) ─────────────────────────────────────────────────
+# ─── Enums ─────────────────────────────────────────────────
 
 class RoleEnum(str, Enum):
     admin          = "admin"
@@ -290,9 +290,6 @@ class SiswaOut(SiswaBase):
 
 
 # ─── Pesan ────────────────────────────────────────────────────────────────────
-# Model: id_pesan, id_pengirim (FK), id_penerima (FK), isi_pesan Text,
-#        waktu TIMESTAMP, status Enum(StatusPesanEnum)
-
 class PesanCreate(BaseModel):
     id_penerima: int = Field(..., example=5)
     isi_pesan:   str = Field(..., min_length=1, example="Selamat pagi, ada yang bisa saya bantu?")
@@ -336,12 +333,20 @@ class GuruListItem(BaseModel):
     waktu:               Optional[datetime]        = None
     status:              Optional[StatusPesanEnum] = None
     jumlah_belum_dibaca: int = 0
+    
+class EditPesanRequest(BaseModel):
+    isi_pesan: str = Field(..., min_length=1)
+
+class PesanOutWithEdit(PesanOut):
+    waktu_edit:       Optional[datetime] = None
+    dihapus_pengirim: bool = False
+    dihapus_penerima: bool = False
+
+    class Config:
+        from_attributes = True    
 
 
 # ─── Absensi ──────────────────────────────────────────────────────────────────
-# Model: id_absensi, id_siswa (FK CASCADE), id_guru (FK SET NULL → nullable!),
-#        tanggal Date, status Enum, keterangan String(100)
-
 class StatusAbsensiEnum(str, Enum):
     hadir = "hadir"
     sakit = "sakit"

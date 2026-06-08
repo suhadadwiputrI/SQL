@@ -715,6 +715,11 @@ def get_riwayat_percakapan(
         and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
         and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
     )
+    
+    filter_tidak_dihapus = ~(
+    ((models.Pesan.id_pengirim == current_user.id) & models.Pesan.dihapus_pengirim) |
+    ((models.Pesan.id_penerima == current_user.id) & models.Pesan.dihapus_penerima)
+    )
 
     # Polling: hanya pesan baru setelah after_id (selalu asc)
     if after_id is not None:
@@ -779,6 +784,72 @@ def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db)
     db.commit()
     return {"message": "Pesan ditandai dibaca"}
 
+# ── Edit Pesan ────────────────────────────────────────────────────────────────
+
+@app.put("/pesan/{id_pesan}/edit", response_model=schemas.PesanOut, tags=["Pesan"])
+def edit_pesan(
+    id_pesan: int,
+    data: schemas.EditPesanRequest,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    pesan = db.get(models.Pesan, id_pesan)
+    if not pesan:
+        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
+    if pesan.id_pengirim != current_user.id:
+        raise HTTPException(status_code=403, detail="Bukan pesan Anda")
+    selisih = datetime.utcnow() - pesan.waktu.replace(tzinfo=None)
+    if selisih.total_seconds() > 5 * 60:
+        raise HTTPException(status_code=400, detail="Pesan hanya bisa diedit dalam 5 menit")
+    pesan.isi_pesan  = data.isi_pesan.strip()
+    pesan.waktu_edit = datetime.utcnow()
+    db.commit()
+    db.refresh(pesan)
+    return pesan
+
+
+# ── Hapus untuk Saya ─────────────────────────────────────────────────────────
+
+@app.delete("/pesan/{id_pesan}/saya", tags=["Pesan"])
+def hapus_pesan_saya(
+    id_pesan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    pesan = db.get(models.Pesan, id_pesan)
+    if not pesan:
+        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
+    if pesan.id_pengirim == current_user.id:
+        pesan.dihapus_pengirim = True
+    elif pesan.id_penerima == current_user.id:
+        pesan.dihapus_penerima = True
+    else:
+        raise HTTPException(status_code=403, detail="Akses ditolak")
+    db.commit()
+    return {"message": "Pesan dihapus untuk Anda"}
+
+
+# ── Hapus untuk Semua ─────────────────────────────────────────────────────────
+
+@app.delete("/pesan/{id_pesan}/semua", tags=["Pesan"])
+async def hapus_pesan_semua(
+    id_pesan: int,
+    db: Session = Depends(get_db),
+    current_user: models.Akun = Depends(get_current_user),
+):
+    pesan = db.get(models.Pesan, id_pesan)
+    if not pesan:
+        raise HTTPException(status_code=404, detail="Pesan tidak ditemukan")
+    if pesan.id_pengirim != current_user.id:
+        raise HTTPException(status_code=403, detail="Hanya pengirim yang bisa hapus untuk semua")
+    id_penerima = pesan.id_penerima
+    db.delete(pesan)
+    db.commit()
+    await ws_manager.kirim_ke_akun(id_penerima, {
+        "type":     "pesan_dihapus",
+        "id_pesan": id_pesan,
+    })
+    return {"message": "Pesan dihapus untuk semua"}
 
 @app.get("/pesan/percakapan/{id}", response_model=List[schemas.PercakapanItem], tags=["Pesan"])
 def get_daftar_percakapan(id: int, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):

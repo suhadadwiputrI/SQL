@@ -156,15 +156,15 @@ class WaliSiswa(Base):
 class Pesan(Base):
     __tablename__ = "pesan"
 
-    id_pesan    = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_pengirim = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"),
-                         nullable=False, index=True)
-    id_penerima = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"),
-                         nullable=False, index=True)
-    isi_pesan   = Column(Text, nullable=False)
-    waktu       = Column(TIMESTAMP, server_default=func.now(), nullable=False)
-    status      = Column(Enum(StatusPesanEnum),
-                         default=StatusPesanEnum.terkirim, nullable=False)
+    id_pesan           = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
+    id_pengirim        = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
+    id_penerima        = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
+    isi_pesan          = Column(Text, nullable=False)
+    waktu              = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    status             = Column(Enum(StatusPesanEnum), default=StatusPesanEnum.terkirim, nullable=False)
+    waktu_edit         = Column(TIMESTAMP, nullable=True)          
+    dihapus_pengirim   = Column(Boolean, default=False, nullable=False)
+    dihapus_penerima   = Column(Boolean, default=False, nullable=False)  
 
     pengirim = relationship("Akun", foreign_keys=[id_pengirim], back_populates="pesan_terkirim")
     penerima = relationship("Akun", foreign_keys=[id_penerima], back_populates="pesan_diterima")

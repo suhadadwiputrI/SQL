@@ -782,7 +782,7 @@ def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db)
 # ── Edit Pesan ────────────────────────────────────────────────────────────────
 
 @app.put("/pesan/{id_pesan}/edit", response_model=schemas.PesanOut, tags=["Pesan"])
-def edit_pesan(
+async def edit_pesan(
     id_pesan: int,
     data: schemas.EditPesanRequest,
     db: Session = Depends(get_db),
@@ -800,6 +800,11 @@ def edit_pesan(
     pesan.waktu_edit = datetime.utcnow()
     db.commit()
     db.refresh(pesan)
+    await ws_manager.kirim_ke_akun(pesan.id_penerima, {
+        "type":     "pesan_diedit",
+        "id_pesan": pesan.id_pesan,
+        "isi_baru": pesan.isi_pesan,
+    })
     return pesan
 
 

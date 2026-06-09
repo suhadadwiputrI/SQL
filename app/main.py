@@ -697,7 +697,7 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
 
 
 
-@app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOut], tags=["Pesan"])
+@app.get("/pesan/riwayat/{id_a}/{id_b}", response_model=List[schemas.PesanOutWithEdit], tags=["Pesan"])
 def get_riwayat_percakapan(
     id_a: int, id_b: int,
     after_id: Optional[int] = Query(None),

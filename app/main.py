@@ -1894,6 +1894,7 @@ def _generate_pdf_catatan(
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("GRID",          (0, 0), (-1, -1), 0.5, colors.red),  # ← tambah ini sementara
     ]))
     elems.append(outer)
 

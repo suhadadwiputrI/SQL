@@ -1751,7 +1751,6 @@ def _generate_pdf_absensi_harian(
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()
-
 def _generate_pdf_catatan(
     data: schemas.LaporanCatatanSiswaOut,
     nama_kelas: str,
@@ -1772,14 +1771,14 @@ def _generate_pdf_catatan(
     def fmt_tgl(d: date) -> str:
         return f"{d.day:02d} {NAMA_BULAN_ID[d.month]} {d.year}"
 
-    st_kop   = ParagraphStyle("Kop",  parent=styles["Normal"],
-                               alignment=TA_CENTER, fontSize=10,
-                               leading=14, textColor=colors.black)
-    st_info  = ParagraphStyle("Info", parent=styles["Normal"],
-                               fontSize=10, spaceAfter=4, leftIndent=0)
-    st_cell  = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=9, leading=12)
+    st_kop  = ParagraphStyle("Kop",  parent=styles["Normal"],
+                              alignment=TA_CENTER, fontSize=10,
+                              leading=14, textColor=colors.black)
+    st_info = ParagraphStyle("Info", parent=styles["Normal"],
+                              fontSize=10, spaceAfter=4, leftIndent=0)
+    st_cell = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=9, leading=12)
 
-    # --- Header kop surat (logo kiri, teks center, kolom kanan penyeimbang) ---
+    # --- Header kop surat ---
     LOGO_PATH = os.path.join(os.path.dirname(__file__), "qoulansadid.png")
     logo_img  = Image(LOGO_PATH, width=2.5*cm, height=2.5*cm)
 
@@ -1806,7 +1805,6 @@ def _generate_pdf_catatan(
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    # -------------------------------------------------------------------------
 
     elems = []
     elems.append(kop_tbl)
@@ -1831,10 +1829,10 @@ def _generate_pdf_catatan(
                                    fontSize=9, leading=12,
                                    fontName="Helvetica-Bold")
         rows = [
-            [Paragraph(h, st_header) for h in ["N\no", "Tanggal", "Judul", "Catatan", "Saran"]]
+            [Paragraph(h, st_header) for h in ["No", "Tanggal", "Judul", "Catatan", "Saran"]]
         ]
         for i, catatan in enumerate(data.catatan, start=1):
-            tgl_str = (catatan.tanggal.strftime("%d-%m-\n%Y")
+            tgl_str = (catatan.tanggal.strftime("%d-%m-%Y")
                        if hasattr(catatan.tanggal, "strftime") else str(catatan.tanggal))
             rows.append([
                 Paragraph(str(i),               st_cell),
@@ -1850,7 +1848,7 @@ def _generate_pdf_catatan(
             ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.black),
             ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
             ("FONTSIZE",      (0, 0), (-1, 0),  9),
-            ("ALIGN",         (0, 0), (-1, 0),  "LEFT"),
+            ("ALIGN",         (0, 0), (-1, 0),  "CENTER"),
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
             ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
             ("FONTSIZE",      (0, 1), (-1, -1), 9),
@@ -1870,19 +1868,22 @@ def _generate_pdf_catatan(
     bulan_ttd = NAMA_BULAN_ID[tanggal_akhir.month]
     tahun_ttd = tanggal_akhir.year
 
+    # TTD kanan saja
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
-                         fontSize=9, alignment=TA_CENTER)
+                             fontSize=9, alignment=TA_CENTER)
 
-    ttd_inner = Table(
+    COL_TTD = PAGE_W * 0.35
+
+    ttd_kanan = Table(
         [
             [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
             [Paragraph("Kepala Sekolah", st_ttd)],
             [Spacer(1, 1.8*cm)],
             [Paragraph("(………………………………………)", st_ttd)],
         ],
-        colWidths=[PAGE_W * 0.35]
+        colWidths=[COL_TTD]
     )
-    ttd_inner.setStyle(TableStyle([
+    ttd_kanan.setStyle(TableStyle([
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
@@ -1890,19 +1891,22 @@ def _generate_pdf_catatan(
         ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
     ]))
 
-    ttd_data = [[
-        Paragraph("", styles["Normal"]),
-        ttd_inner,
-    ]]
-    ttd_tbl = Table(ttd_data, colWidths=[PAGE_W * 0.65, PAGE_W * 0.35])
-    ttd_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    ttd_tbl = Table(
+        [[Paragraph("", styles["Normal"]), ttd_kanan]],
+        colWidths=[PAGE_W - COL_TTD, COL_TTD]
+    )
+    ttd_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
     elems.append(ttd_tbl)
 
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()
-
-
 # =============================================================================
 # WebSocket
 # =============================================================================

@@ -1883,7 +1883,7 @@ def _generate_pdf_catatan(
             [Paragraph("(………………………………………)", st_ttd)],
         ],
         colWidths=[W_TTD],
-        rowHeights=[0.5*cm, 0.5*cm, 1.5*cm, 0.5*cm]
+        rowHeights=[0.5*cm, 0.5*cm, 0.5*cm, 1.5*cm, 0.5*cm]
     )
     ttd_tbl.setStyle(TableStyle([
         ("ALIGN",         (0, 0), (-1, -1), "CENTER"),

@@ -1877,7 +1877,7 @@ def _generate_pdf_catatan(
     ttd_content = Paragraph(
         f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
         f"Kepala Sekolah<br/><br/><br/><br/>"
-        f"(………………………………………)",
+        f"(………………………………………………)",
         st_ttd
     )
 

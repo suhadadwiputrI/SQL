@@ -1781,7 +1781,7 @@ def _generate_pdf_catatan(
 
     # --- Header kop surat (logo kiri, teks center, kolom kanan penyeimbang) ---
     LOGO_PATH = os.path.join(os.path.dirname(__file__), "qoulansadid.png")
-    logo_img  = Image(LOGO_PATH, width=2.5*cm, height=2.5*cm)
+    logo_img  = Image(LOGO_PATH, width=3*cm, height=3*cm)
 
     header_text = Paragraph(
         "<b>LAPORAN CATATAN HARIAN SISWA</b><br/>"
@@ -1791,7 +1791,7 @@ def _generate_pdf_catatan(
         st_kop
     )
 
-    LOGO_W = 2.7 * cm
+    LOGO_W = 3.2 * cm
     PAGE_W = 17.0 * cm
     MID_W  = PAGE_W - (LOGO_W * 2)
 

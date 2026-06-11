@@ -1723,7 +1723,7 @@ def _generate_pdf_absensi_harian(
     ]))
 
     # ── PERBAIKAN: perbesar W_TTD agar teks tidak terpotong ──
-    W_TTD = 7.0 * cm
+    W_TTD = 5.0 * cm
     W_MID = PAGE_W - W_REKAP - W_TTD
 
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
@@ -1732,7 +1732,7 @@ def _generate_pdf_absensi_harian(
     ttd_content = Paragraph(
         f"Prabumulih, {nama_bulan} {tahun}<br/><br/>"
         f"Kepala Sekolah<br/><br/><br/><br/>"
-        f"(………………………………………)",
+        f"(............................)",
         st_ttd
     )
 
@@ -1880,7 +1880,7 @@ def _generate_pdf_catatan(
     ttd_content = Paragraph(
         f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
         f"Kepala Sekolah<br/><br/><br/><br/>"
-        f"(............................)",  # ← ganti pakai titik ASCII biasa
+        f"(............................)",  
         st_ttd
     )
 

@@ -1781,7 +1781,7 @@ def _generate_pdf_catatan(
 
     # --- Header kop surat ---
     LOGO_PATH = os.path.join(os.path.dirname(__file__), "qoulansadid.png")
-    logo_img  = Image(LOGO_PATH, width=3*cm, height=3*cm)
+    logo_img  = Image(LOGO_PATH, width=3.5*cm, height=3.5*cm)
 
     header_text = Paragraph(
         "<b>LAPORAN CATATAN HARIAN SISWA</b><br/>"
@@ -1791,7 +1791,7 @@ def _generate_pdf_catatan(
         st_kop
     )
 
-    LOGO_W = 3.2 * cm
+    LOGO_W = 3.7 * cm
     PAGE_W = 17.0 * cm
     MID_W  = PAGE_W - (LOGO_W * 2)
 
@@ -1871,7 +1871,7 @@ def _generate_pdf_catatan(
 
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
                              fontSize=9, alignment=TA_CENTER, leading=14)
-    W_TTD = 5.0 * cm
+    W_TTD = 9.0 * cm
     W_MID = PAGE_W - W_TTD
 
     ttd_tbl = Table(

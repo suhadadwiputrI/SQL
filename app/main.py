@@ -1873,11 +1873,11 @@ def _generate_pdf_catatan(
     ttd_data = [[
         Paragraph("", styles["Normal"]),
         Paragraph(
-            f"{bulan_ttd} {tahun_ttd}<br/><br/>"
+            f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
             f"Kepala Sekolah<br/><br/><br/><br/>"
             f"(………………………………………)",
             ParagraphStyle("TTD", parent=styles["Normal"],
-                           fontSize=9, alignment=TA_CENTER)),
+                        fontSize=9, alignment=TA_CENTER)),
     ]]
     ttd_tbl = Table(ttd_data, colWidths=[PAGE_W * 0.65, PAGE_W * 0.35])
     ttd_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))

@@ -1751,6 +1751,7 @@ def _generate_pdf_absensi_harian(
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()
+
 def _generate_pdf_catatan(
     data: schemas.LaporanCatatanSiswaOut,
     nama_kelas: str,
@@ -1871,23 +1872,24 @@ def _generate_pdf_catatan(
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
                              fontSize=9, alignment=TA_CENTER, leading=14)
 
-    COL_TTD = PAGE_W * 0.35
+    # ✅ PERBAIKAN: lebar kolom TTD diperlebar agar teks tidak terpotong
+    COL_TTD = PAGE_W * 0.40
 
     ttd_kanan = Table(
         [
             [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
             [Paragraph("Kepala Sekolah", st_ttd)],
-            [Spacer(1, 0.8*cm)],   # dikurangi dari 1.8*cm → 0.8*cm
+            [Spacer(1, 2.0*cm)],   # ✅ PERBAIKAN: diperbesar dari 0.8*cm → 2.0*cm agar muat TTD
             [Paragraph("(………………………………………)", st_ttd)],
         ],
         colWidths=[COL_TTD],
-        rowHeights=[0.4*cm, 0.4*cm, 0.8*cm, 0.4*cm]  # fix tinggi tiap baris
+        rowHeights=[0.5*cm, 0.5*cm, 2.0*cm, 0.5*cm]  # ✅ PERBAIKAN: tinggi baris disesuaikan
     )
     ttd_kanan.setStyle(TableStyle([
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 1),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
+        ("TOPPADDING",    (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
         ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
     ]))
@@ -1904,7 +1906,7 @@ def _generate_pdf_catatan(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     elems.append(ttd_tbl)
-    
+
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()

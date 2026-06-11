@@ -1871,13 +1871,13 @@ def _generate_pdf_catatan(
 
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
                              fontSize=9, alignment=TA_CENTER, leading=14)
-    W_TTD = 5.0 * cm
+    W_TTD = 7.0 * cm  
     W_MID = PAGE_W - W_TTD
 
     ttd_content = Paragraph(
         f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
         f"Kepala Sekolah<br/><br/><br/><br/>"
-        f"(………………………………………………)",
+        f"(………………………………………)",
         st_ttd
     )
 

@@ -1876,7 +1876,8 @@ def _generate_pdf_catatan(
 
     ttd_tbl = Table(
         [
-            [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
+            [Paragraph(f"Prabumulih,", st_ttd)],
+            [Paragraph(f"{bulan_ttd} {tahun_ttd}", st_ttd)],
             [Paragraph("Kepala Sekolah", st_ttd)],
             [Paragraph("", st_ttd)],
             [Paragraph("", st_ttd)],

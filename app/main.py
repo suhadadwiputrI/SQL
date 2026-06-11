@@ -1871,7 +1871,7 @@ def _generate_pdf_catatan(
     tahun_ttd = tanggal_akhir.year
 
     # ── PERBAIKAN: perbesar W_TTD agar teks tidak terpotong ──
-    W_TTD = 11.0 * cm
+    W_TTD = 5.0 * cm
     W_MID = PAGE_W - W_TTD
 
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
@@ -1880,7 +1880,7 @@ def _generate_pdf_catatan(
     ttd_content = Paragraph(
         f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
         f"Kepala Sekolah<br/><br/><br/><br/>"
-        f"(………………………………………)",
+        f"(............................)",  # ← ganti pakai titik ASCII biasa
         st_ttd
     )
 

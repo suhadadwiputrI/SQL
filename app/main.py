@@ -1893,6 +1893,10 @@ def _generate_pdf_catatan(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     elems.append(outer)
+    
+    doc.build(elems)
+    buffer.seek(0)
+    return buffer.read()
 # =============================================================================
 # WebSocket
 # =============================================================================

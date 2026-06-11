@@ -1875,12 +1875,10 @@ def _generate_pdf_catatan(
     W_MID = PAGE_W - W_TTD
 
     ttd_content = Paragraph(
-        f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
-        f"Kepala Sekolah<br/><br/><br/><br/>"
+        f"{bulan_ttd} {tahun_ttd}<br/><br/>"
+        f"Kepala Sekolah<br/><br/><br/>"
         f"(………………………………………)",
-        ParagraphStyle("TTD", parent=styles["Normal"],
-                    fontSize=9, alignment=TA_CENTER, leading=14)
-    )
+        ParagraphStyle("TTD", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER))
 
     outer = Table(
         [[Paragraph("", styles["Normal"]), ttd_content]],

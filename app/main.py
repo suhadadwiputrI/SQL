@@ -1870,14 +1870,29 @@ def _generate_pdf_catatan(
     bulan_ttd = NAMA_BULAN_ID[tanggal_akhir.month]
     tahun_ttd = tanggal_akhir.year
 
+    st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
+                         fontSize=9, alignment=TA_CENTER)
+
+    ttd_inner = Table(
+        [
+            [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
+            [Paragraph("Kepala Sekolah", st_ttd)],
+            [Spacer(1, 1.8*cm)],
+            [Paragraph("(………………………………………)", st_ttd)],
+        ],
+        colWidths=[PAGE_W * 0.35]
+    )
+    ttd_inner.setStyle(TableStyle([
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+    ]))
+
     ttd_data = [[
         Paragraph("", styles["Normal"]),
-        Paragraph(
-            f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
-            f"Kepala Sekolah<br/><br/><br/><br/>"
-            f"(………………………………………)",
-            ParagraphStyle("TTD", parent=styles["Normal"],
-                        fontSize=9, alignment=TA_CENTER)),
+        ttd_inner,
     ]]
     ttd_tbl = Table(ttd_data, colWidths=[PAGE_W * 0.65, PAGE_W * 0.35])
     ttd_tbl.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))

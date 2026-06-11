@@ -1868,9 +1868,8 @@ def _generate_pdf_catatan(
     bulan_ttd = NAMA_BULAN_ID[tanggal_akhir.month]
     tahun_ttd = tanggal_akhir.year
 
-    # TTD kanan saja
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
-                             fontSize=9, alignment=TA_CENTER)
+                             fontSize=9, alignment=TA_CENTER, leading=14)
 
     COL_TTD = PAGE_W * 0.35
 
@@ -1878,17 +1877,19 @@ def _generate_pdf_catatan(
         [
             [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
             [Paragraph("Kepala Sekolah", st_ttd)],
-            [Spacer(1, 1.8*cm)],
+            [Spacer(1, 0.8*cm)],   # dikurangi dari 1.8*cm → 0.8*cm
             [Paragraph("(………………………………………)", st_ttd)],
         ],
-        colWidths=[COL_TTD]
+        colWidths=[COL_TTD],
+        rowHeights=[0.4*cm, 0.4*cm, 0.8*cm, 0.4*cm]  # fix tinggi tiap baris
     )
     ttd_kanan.setStyle(TableStyle([
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 0),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+        ("TOPPADDING",    (0, 0), (-1, -1), 1),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
         ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
     ]))
 
     ttd_tbl = Table(
@@ -1903,7 +1904,7 @@ def _generate_pdf_catatan(
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
     elems.append(ttd_tbl)
-
+    
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()

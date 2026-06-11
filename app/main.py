@@ -710,26 +710,27 @@ def get_riwayat_percakapan(
 ):
     if current_user.id not in (id_a, id_b):
         raise HTTPException(status_code=403, detail="Akses ditolak")
-
+ 
     kedua_arah = or_(
         and_(models.Pesan.id_pengirim == id_a, models.Pesan.id_penerima == id_b),
         and_(models.Pesan.id_pengirim == id_b, models.Pesan.id_penerima == id_a),
     )
-
+ 
     filter_tidak_dihapus = ~(
         ((models.Pesan.id_pengirim == current_user.id) & models.Pesan.dihapus_pengirim) |
         ((models.Pesan.id_penerima == current_user.id) & models.Pesan.dihapus_penerima)
     )
-
-    # Polling
+ 
+    # ── Polling ───────────────────────────────────────────────────────────────
     if after_id is not None:
-        return (
+        hasil = (
             db.query(models.Pesan)
             .filter(kedua_arah, filter_tidak_dihapus, models.Pesan.id_pesan > after_id)
             .order_by(models.Pesan.waktu.asc()).all()
         )
-
-    # Tandai diterima saat fetch awal
+        return _serialize_pesan_list(hasil)
+ 
+    # ── Tandai diterima saat fetch awal ───────────────────────────────────────
     if before_id is None:
         lawan_id = id_b if current_user.id == id_a else id_a
         db.query(models.Pesan).filter(
@@ -738,11 +739,11 @@ def get_riwayat_percakapan(
             models.Pesan.status == models.StatusPesanEnum.terkirim,
         ).update({"status": models.StatusPesanEnum.diterima}, synchronize_session=False)
         db.commit()
-
+ 
     total = db.query(models.Pesan).filter(kedua_arah, filter_tidak_dihapus).count()
-
+ 
     q = db.query(models.Pesan).filter(kedua_arah, filter_tidak_dihapus)
-
+ 
     if before_id is not None:
         q = (
             q.filter(models.Pesan.id_pesan < before_id)
@@ -753,13 +754,41 @@ def get_riwayat_percakapan(
     else:
         sort_col = models.Pesan.waktu.desc() if order == "desc" else models.Pesan.waktu.asc()
         hasil = q.order_by(sort_col).offset(skip).limit(limit).all()
-
+ 
     from fastapi.responses import JSONResponse
     from fastapi.encoders import jsonable_encoder
     return JSONResponse(
-        content=jsonable_encoder(hasil),
+        content=_serialize_pesan_list(hasil),
         headers={"X-Total-Count": str(total)},
     )
+ 
+ 
+def _serialize_pesan_list(pesan_list) -> list:
+    """
+    Serialisasi list Pesan ke dict dengan waktu_millis yang benar.
+ 
+    datetime dari SQLAlchemy bersifat naive (tanpa tzinfo). MySQL TIMESTAMP
+    menyimpan UTC. Supaya Android tahu waktu UTC-nya, kita tambahkan
+    waktu_millis = epoch ms dengan asumsi naive datetime = UTC.
+    """
+    from datetime import timezone
+    from fastapi.encoders import jsonable_encoder
+ 
+    result = []
+    for p in pesan_list:
+        item = jsonable_encoder(p)
+        # Hitung waktu_millis: naive datetime dari DB = UTC → beri tzinfo UTC dulu
+        if p.waktu:
+            waktu_utc = p.waktu.replace(tzinfo=timezone.utc)
+            item["waktu_millis"] = int(waktu_utc.timestamp() * 1000)
+        else:
+            item["waktu_millis"] = None
+        # Lakukan hal yang sama untuk waktu_edit (opsional, untuk konsistensi)
+        if getattr(p, "waktu_edit", None):
+            waktu_edit_utc = p.waktu_edit.replace(tzinfo=timezone.utc)
+            item["waktu_edit_millis"] = int(waktu_edit_utc.timestamp() * 1000)
+        result.append(item)
+    return result
 
 @app.put("/pesan/baca", tags=["Pesan"])
 def tandai_dibaca(data: schemas.TandaiBacaRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):

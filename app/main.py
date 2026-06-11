@@ -1871,46 +1871,28 @@ def _generate_pdf_catatan(
 
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
                              fontSize=9, alignment=TA_CENTER, leading=14)
+    W_TTD = 5.0 * cm
+    W_MID = PAGE_W - W_TTD
 
-    COL_TTD = PAGE_W * 0.35
-
-    ttd_kanan = Table(
-        [
-            [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
-            [Paragraph("Kepala Sekolah", st_ttd)],
-            [Paragraph("", st_ttd)],          # baris kosong untuk ruang ttd
-            [Paragraph("(………………………………………)", st_ttd)],
-        ],
-        colWidths=[COL_TTD],
-        rowHeights=[0.5*cm, 0.5*cm, 2.0*cm, 0.5*cm]
+    ttd_content = Paragraph(
+        f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
+        f"Kepala Sekolah<br/><br/><br/><br/>"
+        f"(………………………………………)",
+        st_ttd
     )
-    ttd_kanan.setStyle(TableStyle([
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        # Garis tanda tangan di bawah baris ruang kosong (row index 2)
-        ("LINEBELOW",     (0, 2), (0, 2),  0.5, colors.black),
-    ]))
 
-    ttd_tbl = Table(
-        [[Paragraph("", styles["Normal"]), ttd_kanan]],
-        colWidths=[PAGE_W - COL_TTD, COL_TTD]
+    outer = Table(
+        [[Paragraph("", styles["Normal"]), ttd_content]],
+        colWidths=[W_MID, W_TTD]
     )
-    ttd_tbl.setStyle(TableStyle([
+    outer.setStyle(TableStyle([
         ("VALIGN",        (0, 0), (-1, -1), "TOP"),
         ("LEFTPADDING",   (0, 0), (-1, -1), 0),
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
         ("TOPPADDING",    (0, 0), (-1, -1), 0),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
     ]))
-    elems.append(ttd_tbl)
-    
-    doc.build(elems)
-    buffer.seek(0)
-    return buffer.read()
+    elems.append(outer)
 # =============================================================================
 # WebSocket
 # =============================================================================

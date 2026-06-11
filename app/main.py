@@ -1579,12 +1579,12 @@ app.include_router(router_laporan)
 # =============================================================================
 
 def _generate_pdf_absensi_harian(
-    data,           # schemas.LaporanAbsensiKelasOut
-    detail_map,     # {id_siswa: {hari: simbol}}
-    hari_terakhir,  # int: jumlah hari di bulan
-    bulan,          # int
-    tahun,          # int
-    nama_bulan,     # str, misal "Mei"
+    data,
+    detail_map,
+    hari_terakhir,
+    bulan,
+    tahun,
+    nama_bulan,
 ) -> bytes:
     import calendar as _cal
     from datetime import date as _date
@@ -1613,10 +1613,8 @@ def _generate_pdf_absensi_harian(
 
     elems = []
 
-    # ── Judul ──
     elems.append(Paragraph("BUKU ABSENSI HARIAN ANAK", st_judul))
 
-    # ── Subtitle: Kelompok kiri, Bulan kanan ──
     sub_tbl = Table(
         [[Paragraph(f"Kelompok : {data.nama_kelas}",
                     ParagraphStyle("SL", parent=styles["Normal"], fontSize=9)),
@@ -1634,7 +1632,6 @@ def _generate_pdf_absensi_harian(
     elems.append(sub_tbl)
     elems.append(Spacer(1, 0.3*cm))
 
-    # ── Lebar kolom ──
     W_NO   = 0.55 * cm
     W_NAMA = 3.8  * cm
     W_S    = 0.6  * cm
@@ -1645,9 +1642,8 @@ def _generate_pdf_absensi_harian(
     W_TGL  = sisa / hari_terakhir
 
     col_widths = [W_NO, W_NAMA] + [W_TGL] * hari_terakhir + [W_S, W_I, W_A, W_KET]
-    tgl_end    = 1 + hari_terakhir  # index kolom terakhir tanggal (0-based)
+    tgl_end    = 1 + hari_terakhir
 
-    # ── 2 baris header ──
     hdr1 = (
         [Paragraph("NO",              st_cell),
          Paragraph("NAMA SISWA",      st_cell)]
@@ -1678,25 +1674,20 @@ def _generate_pdf_absensi_harian(
         ]
         rows.append(row)
 
-    n_data = len(siswa_list)
-
     tbl = Table(rows, colWidths=col_widths, repeatRows=2)
     tbl.setStyle(TableStyle([
-        # merge header baris-1
-        ("SPAN", (0, 0),         (0, 1)),           # NO
-        ("SPAN", (1, 0),         (1, 1)),           # NAMA SISWA
-        ("SPAN", (2, 0),         (tgl_end, 0)),     # TANGGAL ABSENSI
-        ("SPAN", (tgl_end+1, 0), (tgl_end+1, 1)),  # S
-        ("SPAN", (tgl_end+2, 0), (tgl_end+2, 1)),  # I
-        ("SPAN", (tgl_end+3, 0), (tgl_end+3, 1)),  # A
-        ("SPAN", (tgl_end+4, 0), (tgl_end+4, 1)),  # Keterangan
-        # header style
+        ("SPAN", (0, 0),         (0, 1)),
+        ("SPAN", (1, 0),         (1, 1)),
+        ("SPAN", (2, 0),         (tgl_end, 0)),
+        ("SPAN", (tgl_end+1, 0), (tgl_end+1, 1)),
+        ("SPAN", (tgl_end+2, 0), (tgl_end+2, 1)),
+        ("SPAN", (tgl_end+3, 0), (tgl_end+3, 1)),
+        ("SPAN", (tgl_end+4, 0), (tgl_end+4, 1)),
         ("FONTNAME",      (0, 0), (-1, 1),  "Helvetica-Bold"),
         ("FONTSIZE",      (0, 0), (-1, 1),  6.5),
         ("ALIGN",         (0, 0), (-1, 1),  "CENTER"),
         ("VALIGN",        (0, 0), (-1, 1),  "MIDDLE"),
         ("BACKGROUND",    (0, 0), (-1, 1),  C_WHITE),
-        # data rows
         ("FONTNAME",      (0, 2), (-1, -1), "Helvetica"),
         ("FONTSIZE",      (0, 2), (-1, -1), 6.5),
         ("ALIGN",         (0, 2), (0, -1),  "CENTER"),
@@ -1704,7 +1695,6 @@ def _generate_pdf_absensi_harian(
         ("ALIGN",         (2, 2), (-1, -1), "CENTER"),
         ("VALIGN",        (0, 2), (-1, -1), "MIDDLE"),
         ("BACKGROUND",    (0, 2), (-1, -1), C_WHITE),
-        # grid
         ("GRID",          (0, 0), (-1, -1), 0.5, C_BLACK),
         ("TOPPADDING",    (0, 0), (-1, -1), 2),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
@@ -1715,7 +1705,7 @@ def _generate_pdf_absensi_harian(
     elems.append(tbl)
     elems.append(Spacer(1, 0.4*cm))
 
-    # ── Rekap kiri sejajar ujung kiri tabel, TTD mentok kanan ──
+    # ── Rekap + TTD ──
     W_REKAP = W_NO + W_NAMA
     rekap_data = [
         [Paragraph(f"Hadir : {data.total_hadir}", st_rekap)],
@@ -1732,25 +1722,37 @@ def _generate_pdf_absensi_harian(
         ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
     ]))
 
-    W_TTD = 5.0 * cm
+    # ── PERBAIKAN: perbesar W_TTD agar teks tidak terpotong ──
+    W_TTD = 7.0 * cm
     W_MID = PAGE_W - W_REKAP - W_TTD
 
+    st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
+                             fontSize=8, alignment=TA_CENTER, leading=14)
+
     ttd_content = Paragraph(
-        f"{nama_bulan} {tahun}<br/><br/>"
-        f"Kepala Sekolah<br/><br/><br/>"
+        f"Prabumulih, {nama_bulan} {tahun}<br/><br/>"
+        f"Kepala Sekolah<br/><br/><br/><br/>"
         f"(………………………………………)",
-        ParagraphStyle("TTD", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER))
+        st_ttd
+    )
 
     outer = Table(
         [[rekap_tbl, Paragraph("", styles["Normal"]), ttd_content]],
         colWidths=[W_REKAP, W_MID, W_TTD]
     )
-    outer.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
+    outer.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "TOP"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
     elems.append(outer)
 
     doc.build(elems)
     buffer.seek(0)
     return buffer.read()
+
 
 def _generate_pdf_catatan(
     data: schemas.LaporanCatatanSiswaOut,
@@ -1779,7 +1781,6 @@ def _generate_pdf_catatan(
                               fontSize=10, spaceAfter=4, leftIndent=0)
     st_cell = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=9, leading=12)
 
-    # --- Header kop surat ---
     LOGO_PATH = os.path.join(os.path.dirname(__file__), "qoulansadid.png")
     logo_img  = Image(LOGO_PATH, width=3.5*cm, height=3.5*cm)
 
@@ -1869,16 +1870,19 @@ def _generate_pdf_catatan(
     bulan_ttd = NAMA_BULAN_ID[tanggal_akhir.month]
     tahun_ttd = tanggal_akhir.year
 
-    st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
-                             fontSize=9, alignment=TA_CENTER, leading=14)
-    W_TTD = 5.0 * cm
+    # ── PERBAIKAN: perbesar W_TTD agar teks tidak terpotong ──
+    W_TTD = 7.0 * cm
     W_MID = PAGE_W - W_TTD
 
+    st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],
+                             fontSize=9, alignment=TA_CENTER, leading=14)
+
     ttd_content = Paragraph(
-        f"{bulan_ttd} {tahun_ttd}<br/><br/>"
-        f"Kepala Sekolah<br/><br/><br/>"
+        f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
+        f"Kepala Sekolah<br/><br/><br/><br/>"
         f"(………………………………………)",
-        ParagraphStyle("TTD", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER))
+        st_ttd
+    )
 
     outer = Table(
         [[Paragraph("", styles["Normal"]), ttd_content]],

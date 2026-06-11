@@ -1874,28 +1874,16 @@ def _generate_pdf_catatan(
     W_TTD = 9.0 * cm
     W_MID = PAGE_W - W_TTD
 
-    ttd_tbl = Table(
-        [
-            [Paragraph(f"Prabumulih, {bulan_ttd} {tahun_ttd}", st_ttd)],
-            [Paragraph("Kepala Sekolah", st_ttd)],
-            [Paragraph("", st_ttd)],
-            [Paragraph("", st_ttd)],
-            [Paragraph("(………………………………………)", st_ttd)],
-        ],
-        colWidths=[W_TTD],
-        rowHeights=[0.5*cm, 0.5*cm, 0.5*cm, 1.5*cm, 0.5*cm]
+    ttd_content = Paragraph(
+        f"Prabumulih, {bulan_ttd} {tahun_ttd}<br/><br/>"
+        f"Kepala Sekolah<br/><br/><br/><br/>"
+        f"(………………………………………)",
+        ParagraphStyle("TTD", parent=styles["Normal"],
+                    fontSize=9, alignment=TA_CENTER, leading=14)
     )
-    ttd_tbl.setStyle(TableStyle([
-        ("ALIGN",         (0, 0), (-1, -1), "CENTER"),
-        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
-        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
-        ("TOPPADDING",    (0, 0), (-1, -1), 2),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-    ]))
 
     outer = Table(
-        [[Paragraph("", styles["Normal"]), ttd_tbl]],
+        [[Paragraph("", styles["Normal"]), ttd_content]],
         colWidths=[W_MID, W_TTD]
     )
     outer.setStyle(TableStyle([

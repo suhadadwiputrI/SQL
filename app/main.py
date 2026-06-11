@@ -1871,7 +1871,7 @@ def _generate_pdf_catatan(
     tahun_ttd = tanggal_akhir.year
 
     # ── PERBAIKAN: perbesar W_TTD agar teks tidak terpotong ──
-    W_TTD = 7.0 * cm
+    W_TTD = 9.0 * cm
     W_MID = PAGE_W - W_TTD
 
     st_ttd = ParagraphStyle("TTD", parent=styles["Normal"],

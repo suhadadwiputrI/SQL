@@ -4,6 +4,7 @@ import logging
 import os
 import shutil
 import uuid
+from reportlab.platypus import Image
 from datetime import datetime, timedelta, date
 from io import BytesIO
 from typing import List, Optional
@@ -1751,7 +1752,6 @@ def _generate_pdf_absensi_harian(
     buffer.seek(0)
     return buffer.read()
 
-
 def _generate_pdf_catatan(
     data: schemas.LaporanCatatanSiswaOut,
     nama_kelas: str,
@@ -1772,19 +1772,44 @@ def _generate_pdf_catatan(
     def fmt_tgl(d: date) -> str:
         return f"{d.day:02d} {NAMA_BULAN_ID[d.month]} {d.year}"
 
-    st_judul = ParagraphStyle("Judul", parent=styles["Heading1"],
-                              alignment=TA_CENTER, fontSize=13, spaceAfter=4,
-                              textColor=colors.black)
-    st_sub   = ParagraphStyle("Sub",   parent=styles["Normal"],
-                              alignment=TA_CENTER, fontSize=10, spaceAfter=2,
-                              textColor=colors.black)
-    st_info  = ParagraphStyle("Info",  parent=styles["Normal"],
-                              fontSize=10, spaceAfter=4, leftIndent=0)
-    st_cell  = ParagraphStyle("Cell",  parent=styles["Normal"], fontSize=9, leading=12)
+    st_kop   = ParagraphStyle("Kop",  parent=styles["Normal"],
+                               alignment=TA_CENTER, fontSize=10,
+                               leading=14, textColor=colors.black)
+    st_info  = ParagraphStyle("Info", parent=styles["Normal"],
+                               fontSize=10, spaceAfter=4, leftIndent=0)
+    st_cell  = ParagraphStyle("Cell", parent=styles["Normal"], fontSize=9, leading=12)
+
+    # --- Header kop surat (logo kiri, teks center, kolom kanan penyeimbang) ---
+    LOGO_PATH = os.path.join(os.path.dirname(__file__), "qoulansadid.png")
+    logo_img  = Image(LOGO_PATH, width=1.8*cm, height=1.8*cm)
+
+    header_text = Paragraph(
+        "<b>LAPORAN CATATAN HARIAN SISWA</b><br/>"
+        "TK Qoulansadid<br/>"
+        "<font size='8'>Jl. Suban Mas Kel. Patih Galung Kec. Prabumulih Barat "
+        "Kota Prabumulih, Sumatera Selatan</font>",
+        st_kop
+    )
+
+    LOGO_W = 2 * cm
+    PAGE_W = 17.0 * cm
+    MID_W  = PAGE_W - (LOGO_W * 2)
+
+    kop_tbl = Table(
+        [[logo_img, header_text, Paragraph("", styles["Normal"])]],
+        colWidths=[LOGO_W, MID_W, LOGO_W]
+    )
+    kop_tbl.setStyle(TableStyle([
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",   (0, 0), (-1, -1), 0),
+        ("RIGHTPADDING",  (0, 0), (-1, -1), 0),
+        ("TOPPADDING",    (0, 0), (-1, -1), 0),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    # -------------------------------------------------------------------------
 
     elems = []
-    elems.append(Paragraph("LAPORAN CATATAN HARIAN SISWA", st_judul))
-    elems.append(Paragraph("TK Qoulansadid", st_sub))
+    elems.append(kop_tbl)
     elems.append(Spacer(1, 0.2*cm))
     elems.append(HRFlowable(width="100%", thickness=1, color=colors.black))
     elems.append(Spacer(1, 0.5*cm))
@@ -1821,20 +1846,17 @@ def _generate_pdf_catatan(
 
         tbl = Table(rows, colWidths=col_w, repeatRows=1)
         tbl.setStyle(TableStyle([
-            # Header row — white background, bold text (already bold via style)
             ("BACKGROUND",    (0, 0), (-1, 0),  colors.white),
             ("TEXTCOLOR",     (0, 0), (-1, 0),  colors.black),
             ("FONTNAME",      (0, 0), (-1, 0),  "Helvetica-Bold"),
             ("FONTSIZE",      (0, 0), (-1, 0),  9),
             ("ALIGN",         (0, 0), (-1, 0),  "LEFT"),
-            # Data rows
             ("VALIGN",        (0, 0), (-1, -1), "TOP"),
             ("FONTNAME",      (0, 1), (-1, -1), "Helvetica"),
             ("FONTSIZE",      (0, 1), (-1, -1), 9),
             ("ALIGN",         (0, 1), (1, -1),  "CENTER"),
             ("ALIGN",         (2, 1), (-1, -1), "LEFT"),
             ("BACKGROUND",    (0, 1), (-1, -1), colors.white),
-            # Grid — plain black, thin
             ("GRID",          (0, 0), (-1, -1), 0.5, colors.black),
             ("TOPPADDING",    (0, 0), (-1, -1), 5),
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -1848,7 +1870,6 @@ def _generate_pdf_catatan(
     bulan_ttd = NAMA_BULAN_ID[tanggal_akhir.month]
     tahun_ttd = tanggal_akhir.year
 
-    PAGE_W = 17.0 * cm
     ttd_data = [[
         Paragraph("", styles["Normal"]),
         Paragraph(

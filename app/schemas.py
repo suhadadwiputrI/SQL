@@ -42,23 +42,23 @@ class LoginRequest(BaseModel):
 # ─── Akun ─────────────────────────────────────────────────────────────────────
 
 class AkunBase(BaseModel):
-    username: str      = Field(..., max_length=50, example="budi123")
-    nama:     str      = Field(..., max_length=50, example="Budi Santoso")
+    username: str      = Field(..., max_length=35, example="budi123")
+    nama:     str      = Field(..., max_length=35, example="Budi Santoso")
     role:     RoleEnum = Field(default=RoleEnum.admin)
 
 class AkunCreate(AkunBase):
-    password: str = Field(..., example="rahasia123")
+    password: str = Field(..., max_length=28, example="rahasia123")
 
 class AkunUpdate(BaseModel):
-    username:    Optional[str]      = Field(None, max_length=50)
-    password:    Optional[str]      = None
-    nama:        Optional[str]      = Field(None, max_length=50)
+    username:    Optional[str]      = Field(None, max_length=35)
+    password:    Optional[str]      = Field(None, max_length=28)
+    nama:        Optional[str]      = Field(None, max_length=35)
     role:        Optional[RoleEnum] = None
     first_login: Optional[bool]     = None
 
 class AkunCreateWithRole(BaseModel):
-    username: str           = Field(..., max_length=50,  example="kepsek01")
-    nama:     str           = Field(..., max_length=50,  example="Siti Kepala")
+    username: str           = Field(..., max_length=35,  example="kepsek01")
+    nama:     str           = Field(..., max_length=35,  example="Siti Kepala")
     role:     RoleEnum      = Field(..., example=RoleEnum.kepala_sekolah)
     nip:      Optional[str] = Field(None, max_length=20, example="196501011990031001")
 
@@ -73,21 +73,21 @@ class AkunOut(AkunBase):
         from_attributes = True
 
 class GantiPasswordFirstLoginRequest(BaseModel):
-    password_baru: str = Field(..., min_length=6, example="passwordbaru123")
+    password_baru: str = Field(..., min_length=6, max_length=28, example="passwordbaru123")
 
 
 # ─── Reset Password ───────────────────────────────────────────────────────────
 
 class ResetPasswordBase(BaseModel):
-    isi_pertanyaan: str = Field(..., max_length=50, example="Nama hewan peliharaan pertama?")
-    jawaban:        str = Field(..., max_length=50, example="Kucingku")
+    isi_pertanyaan: str = Field(..., max_length=30, example="Nama hewan peliharaan pertama?")
+    jawaban:        str = Field(..., max_length=20, example="Kucingku")
 
 class ResetPasswordCreate(ResetPasswordBase):
     id_akun: int = Field(..., example=1)
 
 class ResetPasswordUpdate(BaseModel):
-    isi_pertanyaan: Optional[str] = Field(None, max_length=50)
-    jawaban:        Optional[str] = Field(None, max_length=50)
+    isi_pertanyaan: Optional[str] = Field(None, max_length=30)
+    jawaban:        Optional[str] = Field(None, max_length=20)
 
 class ResetPasswordOut(ResetPasswordBase):
     id_pertanyaan: int
@@ -103,19 +103,19 @@ class VerifyJawabanRequest(BaseModel):
 class GantiPasswordRequest(BaseModel):
     id_akun:       int = Field(..., example=1)
     jawaban:       str = Field(..., example="Kucingku")
-    password_baru: str = Field(..., example="passwordbaru123")
+    password_baru: str = Field(..., max_length=28, example="passwordbaru123")
 
 
 # ─── Kelas ────────────────────────────────────────────────────────────────────
 
 class KelasBase(BaseModel):
-    nama_kelas: str = Field(..., max_length=30, example="TK A")
+    nama_kelas: str = Field(..., max_length=10, example="TK A")
 
 class KelasCreate(KelasBase):
     pass
 
 class KelasUpdate(BaseModel):
-    nama_kelas: Optional[str] = Field(None, max_length=30)
+    nama_kelas: Optional[str] = Field(None, max_length=10)
 
 class KelasOut(KelasBase):
     id_kelas: int
@@ -134,9 +134,9 @@ class GuruBase(BaseModel):
     )
 
 class GuruCreate(GuruBase):
-    username: str      = Field(..., max_length=50,  example="budi.guru")
-    password: str      = Field(...,                 example="rahasia123")
-    nama:     str      = Field(..., max_length=50,  example="Budi Santoso")
+    username: str      = Field(..., max_length=35,  example="budi.guru")
+    password: str      = Field(..., max_length=28,  example="rahasia123")
+    nama:     str      = Field(..., max_length=35,  example="Budi Santoso")
     role:     RoleEnum = Field(...,                 example=RoleEnum.guru)
 
 class GuruUpdate(BaseModel):
@@ -174,8 +174,8 @@ class GuruOut(BaseModel):
 # ─── Admin ────────────────────────────────────────────────────────────────────
 
 class AdminCreate(BaseModel):
-    username: str = Field(..., max_length=50, example="admin01")
-    nama:     str = Field(..., max_length=50, example="Budi Admin")
+    username: str = Field(..., max_length=35, example="admin01")
+    nama:     str = Field(..., max_length=35, example="Budi Admin")
 
 class AdminOut(BaseModel):
     id_admin: int
@@ -189,8 +189,8 @@ class AdminOut(BaseModel):
 # ─── Kepala Sekolah ───────────────────────────────────────────────────────────
 
 class KepsekCreate(BaseModel):
-    username: str           = Field(..., max_length=50,  example="kepsek01")
-    nama:     str           = Field(..., max_length=50,  example="Siti Kepala")
+    username: str           = Field(..., max_length=35,  example="kepsek01")
+    nama:     str           = Field(..., max_length=35,  example="Siti Kepala")
     nip:      Optional[str] = Field(None, max_length=20, example="196501011990031001")
 
 class KepsekUpdate(BaseModel):
@@ -231,7 +231,7 @@ class WaliSiswaOut(BaseModel):
     id_siswa:      Optional[int] = None
     no_hp_telp:    Optional[str] = None
     alamat:        Optional[str] = None
-    akun:          Optional[AkunOut]       = None
+    akun:          Optional[AkunOut]        = None
     siswa:         Optional[SiswaSimpleOut] = None
 
     class Config:
@@ -239,28 +239,28 @@ class WaliSiswaOut(BaseModel):
 
 class WaliSiswaUpdate(BaseModel):
     no_hp_telp: Optional[str] = Field(None, max_length=20)
-    alamat:     Optional[str] = Field(None, max_length=100)
+    alamat:     Optional[str] = Field(None, max_length=60)
 
 
 # ─── Siswa ────────────────────────────────────────────────────────────────────
 
 class SiswaBase(BaseModel):
     nisn:          str              = Field(..., max_length=25,  example="0012345678")
-    nama_siswa:    str              = Field(..., max_length=50,  example="Ahmad Fauzi")
+    nama_siswa:    str              = Field(..., max_length=35,  example="Ahmad Fauzi")
     jenis_kelamin: JenisKelaminEnum = Field(..., example=JenisKelaminEnum.laki_laki)
     tgl_lahir:     date             = Field(..., example="2019-04-10")
     tahun_masuk:   int              = Field(..., example=2024)
     id_kelas:      Optional[int]    = Field(None, example=1)
 
 class SiswaCreate(SiswaBase):
-    username_wali: str           = Field(..., max_length=50,  example="wali.ahmad")
-    nama_wali:     str           = Field(..., max_length=50,  example="Budi Fauzi")
-    no_hp_telp:    Optional[str] = Field(None, max_length=20,  example="081234567890")
-    alamat:        Optional[str] = Field(None, max_length=100, example="Jl. Mawar No. 5")
+    username_wali: str           = Field(..., max_length=35,  example="wali.ahmad")
+    nama_wali:     str           = Field(..., max_length=35,  example="Budi Fauzi")
+    no_hp_telp:    Optional[str] = Field(None, max_length=20, example="081234567890")
+    alamat:        Optional[str] = Field(None, max_length=60, example="Jl. Mawar No. 5")
 
 class SiswaUpdate(BaseModel):
     nisn:          Optional[str]              = Field(None, max_length=25)
-    nama_siswa:    Optional[str]              = Field(None, max_length=50)
+    nama_siswa:    Optional[str]              = Field(None, max_length=35)
     jenis_kelamin: Optional[JenisKelaminEnum] = None
     tgl_lahir:     Optional[date]             = None
     tahun_masuk:   Optional[int]              = None
@@ -325,12 +325,11 @@ class GuruListItem(BaseModel):
 class EditPesanRequest(BaseModel):
     isi_pesan: str = Field(..., min_length=1)
 
-# ── FIX: tambah waktu_millis agar Android tidak perlu parse string datetime ───
 class PesanOutWithEdit(PesanOut):
     waktu_edit:       Optional[datetime] = None
     dihapus_pengirim: bool               = False
     dihapus_penerima: bool               = False
-    waktu_millis:     Optional[int]      = None   # UNIX epoch ms (UTC-based)
+    waktu_millis:     Optional[int]      = None
 
     class Config:
         from_attributes = True
@@ -348,7 +347,7 @@ class StatusAbsensiEnum(str, Enum):
 class AbsensiSiswaInput(BaseModel):
     id_siswa:   int
     status:     StatusAbsensiEnum
-    keterangan: Optional[str] = Field(None, max_length=100)
+    keterangan: Optional[str] = Field(None, max_length=20)
 
 
 class AbsensiBatchRequest(BaseModel):
@@ -415,7 +414,7 @@ class TargetCatatanEnum(str, Enum):
 
 class CatatanHarianCreate(BaseModel):
     target:   TargetCatatanEnum = Field(..., example="satu_siswa")
-    judul:    str               = Field(..., max_length=50, example="Kegiatan Olahraga Pagi")
+    judul:    str               = Field(..., max_length=30, example="Kegiatan Olahraga Pagi")
     isi:      str               = Field(..., example="Anak sangat antusias mengikuti kegiatan...")
     foto:     Optional[str]     = Field(None, max_length=50, example="foto_olahraga.jpg")
     id_siswa: Optional[int]     = Field(None, example=13)
@@ -442,7 +441,7 @@ class CatatanHarianCreate(BaseModel):
 
 
 class CatatanHarianUpdate(BaseModel):
-    judul: Optional[str] = Field(None, max_length=50)
+    judul: Optional[str] = Field(None, max_length=30)
     isi:   Optional[str] = None
     foto:  Optional[str] = Field(None, max_length=50)
 
@@ -582,7 +581,7 @@ class LaporanCreate(BaseModel):
     periode:        str              = Field(..., max_length=20, example="Mei 2025")
     tanggal_dibuat: date             = Field(..., example="2025-05-17")
     jenis_laporan:  JenisLaporanEnum = Field(JenisLaporanEnum.absensi, example="absensi")
-    keterangan:     Optional[str]    = Field(None, max_length=100)
+    keterangan:     Optional[str]    = Field(None, max_length=20)
 
 
 class LaporanVerifikasi(BaseModel):
@@ -590,7 +589,7 @@ class LaporanVerifikasi(BaseModel):
                     ...,
                     example=StatusLaporanEnum.verifikasi,
                 )
-    keterangan: Optional[str]     = Field(None, max_length=100)
+    keterangan: Optional[str]     = Field(None, max_length=20)
 
 
 class LaporanOut(BaseModel):
@@ -669,9 +668,9 @@ class CatatanRangeOut(BaseModel):
 class LaporanCatatanSiswaOut(BaseModel):
     id_siswa:       int
     nama_siswa:     str
-    nisn:           Optional[str]          = None
-    jumlah_catatan: int                    = 0
-    catatan:        List[CatatanRangeOut]  = []
+    nisn:           Optional[str]         = None
+    jumlah_catatan: int                   = 0
+    catatan:        List[CatatanRangeOut] = []
 
     class Config:
         from_attributes = True

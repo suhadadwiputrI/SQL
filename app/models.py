@@ -35,7 +35,7 @@ class Akun(Base):
 
     id          = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
     username    = Column(String(35), unique=True, index=True, nullable=False)
-    password    = Column(String(70), nullable=False)
+    password    = Column(String(28), nullable=False)
     nama        = Column(String(35), nullable=False)
     role        = Column(Enum(RoleEnum), default=RoleEnum.admin, nullable=False)
     first_login = Column(Boolean, default=True, nullable=False)

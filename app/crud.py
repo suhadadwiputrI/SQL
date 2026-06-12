@@ -1,9 +1,9 @@
 import asyncio
 import json
 import logging
+import hashlib, base64
 from typing import Optional, List
 
-from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy import extract, func
 from app import models, schemas
@@ -11,7 +11,7 @@ from datetime import date
 from sqlalchemy import and_, func
 
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 DEFAULT_PASSWORD = "tkqoulansadid"
 
 logger = logging.getLogger(__name__)
@@ -39,10 +39,10 @@ def decode_id_kelas(raw: Optional[str]) -> List[int]:
         return []
 
 def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+    return base64.b64encode(hashlib.sha1(password.encode()).digest()).decode()
 
 def verify_password(plain: str, hashed: str) -> bool:
-    return pwd_context.verify(plain, hashed)
+    return hash_password(plain) == hashed
 
 def authenticate_akun(db: Session, username: str, password: str) -> Optional[models.Akun]:
     akun = get_akun_by_username(db, username)

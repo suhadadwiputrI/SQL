@@ -34,12 +34,12 @@ class Akun(Base):
     __tablename__ = "akun"
 
     id          = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    username    = Column(String(50), unique=True, index=True, nullable=False)
+    username    = Column(String(35), unique=True, index=True, nullable=False)
     password    = Column(String(70), nullable=False)
-    nama        = Column(String(50), nullable=False)
+    nama        = Column(String(35), nullable=False)
     role        = Column(Enum(RoleEnum), default=RoleEnum.admin, nullable=False)
     first_login = Column(Boolean, default=True, nullable=False)
-    device_id   = Column(String(64), nullable=True)
+    device_id   = Column(String(20), nullable=True)
     created_at  = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at  = Column(TIMESTAMP, onupdate=func.now(), nullable=True)
 
@@ -62,8 +62,8 @@ class ResetPassword(Base):
 
     id_pertanyaan  = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
     id_akun        = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False)
-    isi_pertanyaan = Column(String(50), nullable=False)
-    jawaban        = Column(String(50), nullable=False)
+    isi_pertanyaan = Column(String(30), nullable=False)
+    jawaban        = Column(String(20), nullable=False)
 
     akun = relationship("Akun", back_populates="reset_password")
 
@@ -74,7 +74,7 @@ class Kelas(Base):
     __tablename__ = "kelas"
 
     id_kelas   = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    nama_kelas = Column(String(30), nullable=False)
+    nama_kelas = Column(String(10), nullable=False)
 
 
 # ─── Guru ─────────────────────────────────────────────────────────────────────
@@ -84,7 +84,7 @@ class Guru(Base):
 
     id_guru  = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
     id_akun  = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
-    id_kelas = Column(String(50), nullable=True)   # JSON string "[1,2]"
+    id_kelas = Column(String(13), nullable=True)   # JSON string "[1,2]"
     nip      = Column(String(20), unique=True, nullable=True)
 
     akun    = relationship("Akun", back_populates="guru")
@@ -123,7 +123,7 @@ class Siswa(Base):
     id_kelas      = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True)
     id_wali_siswa = Column(INTEGER(13), ForeignKey("wali_siswa.id_wali_siswa", ondelete="SET NULL"), nullable=True)
     nisn          = Column(String(25), unique=True, nullable=False)
-    nama_siswa    = Column(String(50), nullable=False)
+    nama_siswa    = Column(String(35), nullable=False)
     jenis_kelamin = Column(Enum(JenisKelaminEnum), nullable=False)
     tgl_lahir     = Column(Date, nullable=False)
     tahun_masuk   = Column(INTEGER(7), nullable=False)
@@ -143,7 +143,7 @@ class WaliSiswa(Base):
     id_akun       = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
     id_siswa      = Column(INTEGER(13), nullable=True)
     no_hp_telp    = Column(String(20), nullable=True)
-    alamat        = Column(String(100), nullable=True)
+    alamat        = Column(String(60), nullable=True)
 
     akun  = relationship("Akun",  back_populates="wali_siswa")
     siswa = relationship("Siswa", back_populates="wali_siswa",
@@ -187,7 +187,7 @@ class Absensi(Base):
     id_guru    = Column(INTEGER(13), ForeignKey("guru.id_guru",    ondelete="SET NULL"), nullable=True,  index=True)
     tanggal    = Column(Date, nullable=False, index=True)
     status     = Column(Enum(StatusAbsensiEnum), nullable=False, default=StatusAbsensiEnum.hadir)
-    keterangan = Column(String(100), nullable=True)
+    keterangan = Column(String(20), nullable=True)
 
     siswa = relationship("Siswa", foreign_keys=[id_siswa])
     guru  = relationship("Guru",  foreign_keys=[id_guru])
@@ -209,7 +209,7 @@ class CatatanHarian(Base):
     id_siswa   = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=True,  index=True)
     id_kelas   = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True,  index=True)
     target     = Column(Enum(TargetCatatanEnum), nullable=False, default=TargetCatatanEnum.satu_siswa)
-    judul      = Column(String(50), nullable=False)
+    judul      = Column(String(30), nullable=False)
     foto       = Column(String(50), nullable=True)
     isi        = Column(Text, nullable=False)
     tanggal    = Column(TIMESTAMP, server_default=func.now(), nullable=False, index=True)
@@ -238,7 +238,7 @@ class Notifikasi(Base):
 
     id_notif = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
     id_akun  = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
-    judul    = Column(String(50),  nullable=False)
+    judul    = Column(String(30),  nullable=False)
     pesan    = Column(String(100), nullable=False)
     tipe     = Column(Enum(TipeNotifEnum),   nullable=False)
     ref_id   = Column(INTEGER(13), nullable=True)
@@ -269,7 +269,7 @@ class Laporan(Base):
     tanggal_dibuat = Column(Date,        nullable=False)
     jenis_laporan  = Column(Enum(JenisLaporanEnum), nullable=False, default=JenisLaporanEnum.absensi)
     status         = Column(Enum(StatusLaporanEnum), default=StatusLaporanEnum.menunggu_verifikasi, nullable=False)
-    keterangan     = Column(String(100), nullable=True)
+    keterangan     = Column(String(20), nullable=True)
     created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
 
     kelas = relationship("Kelas", foreign_keys=[id_kelas])

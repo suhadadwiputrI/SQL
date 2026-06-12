@@ -134,14 +134,10 @@ def _get_guru_or_403(db: Session, id: int) -> models.Guru:
     return guru
 
 
-def _cek_guru_akses_kelas(guru: models.Guru, id_kelas: int) -> None:
-    """Pastikan guru memiliki akses ke id_kelas yang diminta.
-    Guru dengan id_kelas NULL atau tidak mengandung id_kelas → 403.
-    """
-    allowed = crud.decode_id_kelas(guru.id_kelas)
+def _cek_guru_akses_kelas(db: Session, guru: models.Guru, id_kelas: int) -> None:
+    allowed = crud.get_kelas_ids_by_guru(db, guru.id_guru)
     if not allowed or id_kelas not in allowed:
         raise HTTPException(status_code=403, detail="Guru tidak memiliki akses ke kelas ini")
-
 
 def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int):
     if current_user.role == models.RoleEnum.wali_siswa:
@@ -595,7 +591,7 @@ def get_siswa_by_kelas(
 
     if current_user.role == models.RoleEnum.guru:
         guru = _get_guru_or_403(db, current_user.id)
-        _cek_guru_akses_kelas(guru, id_kelas)
+        _cek_guru_akses_kelas(db, guru, id_kelas)
     elif current_user.role not in (
         models.RoleEnum.admin,
         models.RoleEnum.kepala_sekolah,
@@ -978,7 +974,7 @@ def get_semua_wali(db: Session = Depends(get_db), current_user: models.Akun = De
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id)
-    allowed_kelas = crud.decode_id_kelas(guru.id_kelas)
+    allowed_kelas = crud.get_kelas_ids_by_guru(db, guru.id_guru)
     return [
         schemas.WaliListItem(
             id_akun_wali=w.id_akun,
@@ -1001,7 +997,7 @@ def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id)
-    _cek_guru_akses_kelas(guru, id_kelas)
+    _cek_guru_akses_kelas(db, guru, id_kelas)
     if not crud.get_kelas(db, id_kelas):
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     siswa_list = (
@@ -1035,7 +1031,7 @@ def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Dep
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id)
-    _cek_guru_akses_kelas(guru, payload.id_kelas)
+    _cek_guru_akses_kelas(db, guru, payload.id_kelas)
     hasil = []
     for item in payload.data:
         siswa = crud.get_siswa(db, item.id_siswa)
@@ -1250,7 +1246,7 @@ def buat_laporan(payload: schemas.LaporanCreate, db: Session = Depends(get_db), 
     kelas = db.get(models.Kelas, payload.id_kelas)
     if not kelas:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
-    _cek_guru_akses_kelas(guru, payload.id_kelas)
+    _cek_guru_akses_kelas(db, guru, payload.id_kelas)
     lap = crud.create_laporan(db, payload, guru.id_guru)
     return crud._build_laporan_out(lap)
 
@@ -1285,7 +1281,7 @@ def get_laporan_absensi(
     if tanggal_awal > tanggal_akhir:
         raise HTTPException(status_code=400, detail="tanggal_awal tidak boleh lebih besar dari tanggal_akhir")
     guru = _get_guru_or_403(db, current_user.id)
-    _cek_guru_akses_kelas(guru, id_kelas)
+    _cek_guru_akses_kelas(db, guru, id_kelas)
     result = crud.get_laporan_absensi_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
@@ -1311,8 +1307,7 @@ def get_laporan_catatan(
     is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
     if not is_admin:
         guru = _get_guru_or_403(db, current_user.id)
-        _cek_guru_akses_kelas(guru, id_kelas)
-
+        _cek_guru_akses_kelas(db, guru, id_kelas)
     result = crud.get_laporan_catatan_kelas_range(db, id_kelas, tanggal_awal, tanggal_akhir)
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
@@ -1352,7 +1347,7 @@ def get_laporan_otomatis_kelas(
     is_admin = current_user.role in (models.RoleEnum.admin, models.RoleEnum.kepala_sekolah)
     if not is_admin:
         guru = _get_guru_or_403(db, current_user.id)
-        _cek_guru_akses_kelas(guru, id_kelas)
+        _cek_guru_akses_kelas(db, guru, id_kelas)  
     result = crud.get_laporan_otomatis_kelas(db, id_kelas, bulan, tahun)
     if not result:
         raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
@@ -1375,7 +1370,7 @@ def download_pdf_absensi(
             raise HTTPException(status_code=404, detail="Kelas tidak ditemukan")
     else:
         guru = _get_guru_or_403(db, current_user.id)
-        _cek_guru_akses_kelas(guru, id_kelas)
+        _cek_guru_akses_kelas(db, guru, id_kelas)
 
     tanggal_awal  = _date(tahun, bulan, 1)
     hari_terakhir = _cal.monthrange(tahun, bulan)[1]
@@ -1439,7 +1434,7 @@ def download_pdf_catatan(
     if not is_admin:
         guru = _get_guru_or_403(db, current_user.id)
         if siswa.id_kelas is not None:
-            _cek_guru_akses_kelas(guru, siswa.id_kelas)
+            _cek_guru_akses_kelas(db, guru, siswa.id_kelas)
 
     tanggal_awal  = _date(tahun, bulan, 1)
     hari_terakhir = _cal.monthrange(tahun, bulan)[1]

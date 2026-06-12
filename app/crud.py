@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 import hashlib, base64
 from typing import Optional, List
@@ -24,20 +23,6 @@ def _commit_refresh(db: Session, obj):
     db.refresh(obj)
     return obj
 
-def encode_id_kelas(list_id: Optional[List[int]]) -> Optional[str]:
-    if not list_id:
-        return None
-    return json.dumps(list(dict.fromkeys(list_id))[:2])
-
-def decode_id_kelas(raw: Optional[str]) -> List[int]:
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-        return [int(x) for x in parsed] if isinstance(parsed, list) else [int(parsed)]
-    except (ValueError, TypeError):
-        return []
-
 def hash_password(password: str) -> str:
     return base64.b64encode(hashlib.sha1(password.encode()).digest()).decode()
 
@@ -50,7 +35,23 @@ def authenticate_akun(db: Session, username: str, password: str) -> Optional[mod
         return akun
     return None
 
+def get_kelas_ids_by_guru(db: Session, id_guru: int) -> List[int]:
+    rows = (
+        db.query(models.GuruKelas.id_kelas)
+        .filter(models.GuruKelas.id_guru == id_guru)
+        .all()
+    )
+    return [r[0] for r in rows]
 
+
+def set_guru_kelas(db: Session, id_guru: int, list_id_kelas: Optional[List[int]]) -> None:
+    """Ganti seluruh relasi guru_kelas milik guru ini dengan list_id_kelas baru."""
+    db.query(models.GuruKelas).filter(models.GuruKelas.id_guru == id_guru).delete()
+    if list_id_kelas:
+        unique_ids = list(dict.fromkeys(list_id_kelas))[:2]  # maks 2, sesuai aturan sebelumnya
+        for id_kelas in unique_ids:
+            db.add(models.GuruKelas(id_guru=id_guru, id_kelas=id_kelas))
+    db.flush()
 
 
 _firebase_initialized = False
@@ -260,9 +261,12 @@ def create_guru_with_akun(db: Session, guru: schemas.GuruCreate) -> models.Guru:
     )
     db.add(akun)
     db.flush()
-    obj = models.Guru(id_akun=akun.id,
-                      id_kelas=encode_id_kelas(guru.list_id_kelas), nip=guru.nip)
+
+    obj = models.Guru(id_akun=akun.id, nip=guru.nip)
     db.add(obj)
+    db.flush()
+
+    set_guru_kelas(db, obj.id_guru, guru.list_id_kelas)
     return _commit_refresh(db, obj)
 
 def update_guru(db: Session, id_guru: int, data) -> Optional[models.Guru]:
@@ -272,7 +276,7 @@ def update_guru(db: Session, id_guru: int, data) -> Optional[models.Guru]:
     if data.nip is not None:
         obj.nip = data.nip
     if data.list_id_kelas is not None:
-        obj.id_kelas = encode_id_kelas(data.list_id_kelas)
+        set_guru_kelas(db, id_guru, data.list_id_kelas)
     return _commit_refresh(db, obj)
 
 def delete_guru(db: Session, id_guru: int) -> bool:

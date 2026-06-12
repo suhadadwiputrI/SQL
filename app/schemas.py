@@ -3,7 +3,6 @@ from typing import Optional, List
 from datetime import datetime, date
 from enum import Enum
 from pydantic import BaseModel, Field, model_validator
-import json
 
 
 # ─── Enums ─────────────────────────────────────────────────
@@ -130,7 +129,7 @@ class GuruBase(BaseModel):
     nip:           Optional[str]       = Field(None, max_length=20, example="198501012010011001")
     list_id_kelas: Optional[List[int]] = Field(
         None, example=[1, 2],
-        description="ID kelas yang diampu, maks 2. Disimpan sebagai JSON string di kolom id_kelas.",
+        description="ID kelas yang diampu guru (maks 2), disimpan melalui tabel relasi guru_kelas.",
     )
 
 class GuruCreate(GuruBase):
@@ -155,21 +154,15 @@ class GuruOut(BaseModel):
     @model_validator(mode='before')
     @classmethod
     def parse_id_kelas(cls, data):
-        if hasattr(data, 'id_kelas'):
-            raw = data.id_kelas
+        if hasattr(data, 'guru_kelas'):
             try:
-                parsed = json.loads(raw) if raw else []
-                data.__dict__['list_id_kelas'] = (
-                    [int(x) for x in parsed] if isinstance(parsed, list)
-                    else [int(parsed)]
-                )
-            except (ValueError, TypeError):
+                data.__dict__['list_id_kelas'] = [gk.id_kelas for gk in data.guru_kelas]
+            except Exception:
                 data.__dict__['list_id_kelas'] = []
         return data
 
     class Config:
         from_attributes = True
-
 
 # ─── Admin ────────────────────────────────────────────────────────────────────
 

@@ -1,10 +1,9 @@
 from sqlalchemy import (
     Boolean, Column, ForeignKey, Integer, String,
-    Enum, TIMESTAMP, Date, DateTime, Text
+    Enum, TIMESTAMP, Date, Text
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from sqlalchemy.dialects.mysql import INTEGER
 import enum
 
 from app.database import Base
@@ -33,7 +32,7 @@ class StatusPesanEnum(str, enum.Enum):
 class Akun(Base):
     __tablename__ = "akun"
 
-    id          = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
+    id          = Column(Integer, primary_key=True, index=True, autoincrement=True)
     username    = Column(String(35), unique=True, index=True, nullable=False)
     password    = Column(String(28), nullable=False)
     nama        = Column(String(35), nullable=False)
@@ -60,8 +59,8 @@ class Akun(Base):
 class ResetPassword(Base):
     __tablename__ = "reset_password"
 
-    id_pertanyaan  = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun        = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False)
+    id_pertanyaan  = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_akun        = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False)
     isi_pertanyaan = Column(String(30), nullable=False)
     jawaban        = Column(String(20), nullable=False)
 
@@ -73,8 +72,21 @@ class ResetPassword(Base):
 class Kelas(Base):
     __tablename__ = "kelas"
 
-    id_kelas   = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
+    id_kelas   = Column(Integer, primary_key=True, index=True, autoincrement=True)
     nama_kelas = Column(String(10), nullable=False)
+
+
+# ─── Guru Kelas (many-to-many) ────────────────────────────────────────────────
+
+class GuruKelas(Base):
+    __tablename__ = "guru_kelas"
+
+    id_guru_kelas = Column(Integer, primary_key=True, autoincrement=True)
+    id_guru       = Column(Integer, ForeignKey("guru.id_guru",   ondelete="CASCADE"), nullable=False, index=True)
+    id_kelas      = Column(Integer, ForeignKey("kelas.id_kelas", ondelete="CASCADE"), nullable=False, index=True)
+
+    guru  = relationship("Guru",  back_populates="guru_kelas")
+    kelas = relationship("Kelas", foreign_keys=[id_kelas])
 
 
 # ─── Guru ─────────────────────────────────────────────────────────────────────
@@ -82,13 +94,13 @@ class Kelas(Base):
 class Guru(Base):
     __tablename__ = "guru"
 
-    id_guru  = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun  = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
-    id_kelas = Column(String(13), nullable=True)   # JSON string "[1,2]"
-    nip      = Column(String(20), unique=True, nullable=True)
+    id_guru = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_akun = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
+    nip     = Column(String(20), unique=True, nullable=True)
 
-    akun    = relationship("Akun", back_populates="guru")
-    laporan = relationship("Laporan", back_populates="guru", cascade="all, delete-orphan")
+    akun       = relationship("Akun",      back_populates="guru")
+    laporan    = relationship("Laporan",   back_populates="guru", cascade="all, delete-orphan")
+    guru_kelas = relationship("GuruKelas", back_populates="guru", cascade="all, delete-orphan")
 
 
 # ─── Admin ────────────────────────────────────────────────────────────────────
@@ -96,8 +108,8 @@ class Guru(Base):
 class Admin(Base):
     __tablename__ = "admin"
 
-    id_admin = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun  = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
+    id_admin = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_akun  = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
 
     akun = relationship("Akun", back_populates="admin")
 
@@ -107,8 +119,8 @@ class Admin(Base):
 class KepalaSekolah(Base):
     __tablename__ = "kepala_sekolah"
 
-    id_kepsek = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun   = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
+    id_kepsek = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_akun   = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
     nip       = Column(String(20), unique=True, nullable=True)
 
     akun = relationship("Akun", back_populates="kepala_sekolah")
@@ -119,14 +131,14 @@ class KepalaSekolah(Base):
 class Siswa(Base):
     __tablename__ = "siswa"
 
-    id_siswa      = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_kelas      = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True)
-    id_wali_siswa = Column(INTEGER(13), ForeignKey("wali_siswa.id_wali_siswa", ondelete="SET NULL"), nullable=True)
+    id_siswa      = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_kelas      = Column(Integer, ForeignKey("kelas.id_kelas",           ondelete="SET NULL"), nullable=True)
+    id_wali_siswa = Column(Integer, ForeignKey("wali_siswa.id_wali_siswa", ondelete="SET NULL"), nullable=True)
     nisn          = Column(String(25), unique=True, nullable=False)
     nama_siswa    = Column(String(35), nullable=False)
     jenis_kelamin = Column(Enum(JenisKelaminEnum), nullable=False)
     tgl_lahir     = Column(Date, nullable=False)
-    tahun_masuk   = Column(INTEGER(7), nullable=False)
+    tahun_masuk   = Column(Integer, nullable=False)
     created_at    = Column(TIMESTAMP, server_default=func.now(), nullable=False)
     updated_at    = Column(TIMESTAMP, onupdate=func.now(), nullable=True)
 
@@ -139,9 +151,9 @@ class Siswa(Base):
 class WaliSiswa(Base):
     __tablename__ = "wali_siswa"
 
-    id_wali_siswa = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun       = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
-    id_siswa      = Column(INTEGER(13), nullable=True)
+    id_wali_siswa = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_akun       = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, unique=True)
+    id_siswa      = Column(Integer, nullable=True)
     no_hp_telp    = Column(String(20), nullable=True)
     alamat        = Column(String(60), nullable=True)
 
@@ -156,15 +168,15 @@ class WaliSiswa(Base):
 class Pesan(Base):
     __tablename__ = "pesan"
 
-    id_pesan           = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_pengirim        = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
-    id_penerima        = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
-    isi_pesan          = Column(Text, nullable=False)
-    waktu              = Column(TIMESTAMP, server_default=func.now(), nullable=False)
-    status             = Column(Enum(StatusPesanEnum), default=StatusPesanEnum.terkirim, nullable=False)
-    waktu_edit         = Column(TIMESTAMP, nullable=True)          
-    dihapus_pengirim   = Column(Boolean, default=False, nullable=False)
-    dihapus_penerima   = Column(Boolean, default=False, nullable=False)  
+    id_pesan         = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_pengirim      = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
+    id_penerima      = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
+    isi_pesan        = Column(Text, nullable=False)
+    waktu            = Column(TIMESTAMP, server_default=func.now(), nullable=False)
+    status           = Column(Enum(StatusPesanEnum), default=StatusPesanEnum.terkirim, nullable=False)
+    waktu_edit       = Column(TIMESTAMP, nullable=True)
+    dihapus_pengirim = Column(Boolean, default=False, nullable=False)
+    dihapus_penerima = Column(Boolean, default=False, nullable=False)
 
     pengirim = relationship("Akun", foreign_keys=[id_pengirim], back_populates="pesan_terkirim")
     penerima = relationship("Akun", foreign_keys=[id_penerima], back_populates="pesan_diterima")
@@ -182,9 +194,9 @@ class StatusAbsensiEnum(str, enum.Enum):
 class Absensi(Base):
     __tablename__ = "absensi"
 
-    id_absensi = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_siswa   = Column(INTEGER(13), ForeignKey("siswa.id_siswa",  ondelete="CASCADE"),  nullable=False, index=True)
-    id_guru    = Column(INTEGER(13), ForeignKey("guru.id_guru",    ondelete="SET NULL"), nullable=True,  index=True)
+    id_absensi = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_siswa   = Column(Integer, ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=False, index=True)
+    id_guru    = Column(Integer, ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
     tanggal    = Column(Date, nullable=False, index=True)
     status     = Column(Enum(StatusAbsensiEnum), nullable=False, default=StatusAbsensiEnum.hadir)
     keterangan = Column(String(20), nullable=True)
@@ -204,10 +216,10 @@ class TargetCatatanEnum(str, enum.Enum):
 class CatatanHarian(Base):
     __tablename__ = "catatan_harian"
 
-    id_catatan = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_guru    = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True,  index=True)
-    id_siswa   = Column(INTEGER(13), ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=True,  index=True)
-    id_kelas   = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True,  index=True)
+    id_catatan = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_guru    = Column(Integer, ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True, index=True)
+    id_siswa   = Column(Integer, ForeignKey("siswa.id_siswa", ondelete="CASCADE"),  nullable=True, index=True)
+    id_kelas   = Column(Integer, ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True, index=True)
     target     = Column(Enum(TargetCatatanEnum), nullable=False, default=TargetCatatanEnum.satu_siswa)
     judul      = Column(String(30), nullable=False)
     foto       = Column(String(50), nullable=True)
@@ -236,41 +248,42 @@ class StatusNotifEnum(str, enum.Enum):
 class Notifikasi(Base):
     __tablename__ = "notifikasi"
 
-    id_notif = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_akun  = Column(INTEGER(13), ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
+    id_notif = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_akun  = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
     judul    = Column(String(40),  nullable=False)
     pesan    = Column(String(100), nullable=False)
     tipe     = Column(Enum(TipeNotifEnum),   nullable=False)
-    ref_id   = Column(INTEGER(13), nullable=True)
-    tanggal  = Column(TIMESTAMP,  server_default=func.now(), nullable=False, index=True)
+    ref_id   = Column(Integer, nullable=True)
+    tanggal  = Column(TIMESTAMP, server_default=func.now(), nullable=False, index=True)
     status   = Column(Enum(StatusNotifEnum), default=StatusNotifEnum.belum_dibaca, nullable=False)
 
     akun = relationship("Akun", foreign_keys=[id_akun])
 
 
-# ─── Laporan Manual Guru ──────────────────────────────────────────────────────
+# ─── Laporan ──────────────────────────────────────────────────────────────────
 
 class StatusLaporanEnum(str, enum.Enum):
     menunggu_verifikasi = "menunggu_verifikasi"
-    verifikasi       = "verifikasi"
+    verifikasi          = "verifikasi"
 
 
 class JenisLaporanEnum(str, enum.Enum):
     absensi = "absensi"
     catatan = "catatan"
 
+
 class Laporan(Base):
     __tablename__ = "laporan"
 
-    id_laporan     = Column(INTEGER(13), primary_key=True, index=True, autoincrement=True)
-    id_kelas       = Column(INTEGER(13), ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True, index=True)
-    id_guru        = Column(INTEGER(13), ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True, index=True)
-    periode        = Column(String(20),  nullable=False)
-    tanggal_dibuat = Column(Date,        nullable=False)
-    jenis_laporan  = Column(Enum(JenisLaporanEnum), nullable=False, default=JenisLaporanEnum.absensi)
-    status         = Column(Enum(StatusLaporanEnum), default=StatusLaporanEnum.menunggu_verifikasi, nullable=False)
+    id_laporan     = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id_kelas       = Column(Integer, ForeignKey("kelas.id_kelas", ondelete="SET NULL"), nullable=True, index=True)
+    id_guru        = Column(Integer, ForeignKey("guru.id_guru",   ondelete="SET NULL"), nullable=True, index=True)
+    periode        = Column(String(20), nullable=False)
+    tanggal_dibuat = Column(Date,       nullable=False)
+    jenis_laporan  = Column(Enum(JenisLaporanEnum),  nullable=False, default=JenisLaporanEnum.absensi)
+    status         = Column(Enum(StatusLaporanEnum), nullable=False, default=StatusLaporanEnum.menunggu_verifikasi)
     keterangan     = Column(String(20), nullable=True)
-    created_at     = Column(TIMESTAMP,   server_default=func.now(), nullable=False)
+    created_at     = Column(TIMESTAMP,  server_default=func.now(), nullable=False)
 
     kelas = relationship("Kelas", foreign_keys=[id_kelas])
     guru  = relationship("Guru",  foreign_keys=[id_guru], back_populates="laporan")

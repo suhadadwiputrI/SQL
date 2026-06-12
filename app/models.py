@@ -250,8 +250,8 @@ class Notifikasi(Base):
 
     id_notif = Column(Integer, primary_key=True, index=True, autoincrement=True)
     id_akun  = Column(Integer, ForeignKey("akun.id", ondelete="CASCADE"), nullable=False, index=True)
-    judul    = Column(String(40),  nullable=False)
-    pesan    = Column(String(100), nullable=False)
+    judul    = Column(String(50),  nullable=False)
+    pesan    = Column(String(75), nullable=False)
     tipe     = Column(Enum(TipeNotifEnum),   nullable=False)
     ref_id   = Column(Integer, nullable=True)
     tanggal  = Column(TIMESTAMP, server_default=func.now(), nullable=False, index=True)

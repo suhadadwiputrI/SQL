@@ -29,11 +29,11 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return hash_password(plain) == hashed
 
-def authenticate_akun(db: Session, username: str, password: str) -> Optional[models.Akun]:
-    akun = get_akun_by_username(db, username)
-    if akun and verify_password(password, akun.password):
-        return akun
-    return None
+def get_akun_by_username(db: Session, username: str) -> Optional[models.Akun]:
+    akun = db.query(models.Akun).filter(models.Akun.username == username).first()
+    if akun and akun.username != username:  
+        return None
+    return akun
 
 def get_kelas_ids_by_guru(db: Session, id_guru: int) -> List[int]:
     rows = (
@@ -45,10 +45,9 @@ def get_kelas_ids_by_guru(db: Session, id_guru: int) -> List[int]:
 
 
 def set_guru_kelas(db: Session, id_guru: int, list_id_kelas: Optional[List[int]]) -> None:
-    """Ganti seluruh relasi guru_kelas milik guru ini dengan list_id_kelas baru."""
     db.query(models.GuruKelas).filter(models.GuruKelas.id_guru == id_guru).delete()
     if list_id_kelas:
-        unique_ids = list(dict.fromkeys(list_id_kelas))[:2]  # maks 2, sesuai aturan sebelumnya
+        unique_ids = list(dict.fromkeys(list_id_kelas))[:2] 
         for id_kelas in unique_ids:
             db.add(models.GuruKelas(id_guru=id_guru, id_kelas=id_kelas))
     db.flush()
@@ -65,7 +64,6 @@ def init_firebase():
         from firebase_admin import credentials
         import os, json
 
-        # Prioritas 1: env variable (untuk Railway/production)
         service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT")
         if service_account_json:
             cred = credentials.Certificate(json.loads(service_account_json))
@@ -74,7 +72,6 @@ def init_firebase():
             logger.info("Firebase init dari ENV berhasil")
             return
 
-        # Prioritas 2: file lokal (untuk dev)
         if os.path.exists("serviceAccountKey.json"):
             cred = credentials.Certificate("serviceAccountKey.json")
             firebase_admin.initialize_app(cred)
@@ -101,7 +98,7 @@ def kirim_fcm(fcm_token: str, tipe: str, judul: str, isi: str,
                 "isi"  : isi,
                 "role" : role,
             },
-            topic=f"user_{fcm_token}",  # fcm_token di sini = id akun (angka)
+            topic=f"user_{fcm_token}", 
             android=messaging.AndroidConfig(
                 priority="high",
                 ttl=86400,
@@ -532,7 +529,6 @@ def delete_absensi(db: Session, id_absensi: int) -> bool:
 
 def _buat_notif(db: Session, id: int, judul: str, pesan: str,
                 tipe: models.TipeNotifEnum, ref_id: int) -> models.Notifikasi:
-    """Buat satu baris notifikasi tanpa commit."""
     obj = models.Notifikasi(id_akun=id, judul=judul, pesan=pesan,
                             tipe=tipe, ref_id=ref_id)
     db.add(obj)
@@ -667,16 +663,10 @@ def kirim_notif_catatan(
     catatan: models.CatatanHarian,
     nama_guru: str,
 ) -> None:
-    """
-    Kirim notifikasi catatan ke wali yang relevan berdasarkan target catatan.
-    - semua_kelas : semua wali siswa aktif
-    - satu_kelas  : semua wali siswa di kelas tersebut
-    - satu_siswa  : satu wali dari siswa tersebut
-    """
     from app.websocket_manager import ws_manager
 
     target   = catatan.target
-    pasangan = []  # list of (wali, siswa)
+    pasangan = [] 
 
     if target == models.TargetCatatanEnum.satu_siswa:
         if catatan.id_siswa:
@@ -701,7 +691,7 @@ def kirim_notif_catatan(
                 if siswa:
                     pasangan.append((wali, siswa))
 
-    else:  # semua_kelas
+    else: 
         siswa_list = (db.query(models.Siswa)
                       .filter(models.Siswa.id_wali_siswa.isnot(None)).all())
         id_wali_set = {s.id_wali_siswa for s in siswa_list}

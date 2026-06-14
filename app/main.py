@@ -659,7 +659,7 @@ def get_wali_by_akun(id: int, db: Session = Depends(get_db), current_user: model
 # =============================================================================
 
 @app.post("/pesan/", response_model=schemas.PesanOut, status_code=201, tags=["Pesan"])
-def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+async def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if not crud.get_akun(db, data.id_penerima):
         raise HTTPException(status_code=404, detail="Penerima tidak ditemukan")
     pesan = models.Pesan(
@@ -671,14 +671,14 @@ def kirim_pesan(data: schemas.PesanCreate, db: Session = Depends(get_db), curren
     db.add(pesan)
     db.commit()
     db.refresh(pesan)
-    crud.kirim_notif_pesan(
+    await crud.kirim_notif_pesan(
         db,
         id_akun_penerima=pesan.id_penerima,
         nama_pengirim=current_user.nama,
         id_pengirim=current_user.id,
         id_pesan=pesan.id_pesan,
         payload_ws={
-            "type": "pesan_baru",   # ← tambah ini
+            "type": "pesan_baru",
             "data": {
                 "id_pesan":      pesan.id_pesan,
                 "id_pengirim":   pesan.id_pengirim,
@@ -1027,7 +1027,7 @@ def get_siswa_absensi(id_kelas: int, tanggal: date, db: Session = Depends(get_db
 
 
 @app.post("/absensi/batch", response_model=List[schemas.AbsensiOut], tags=["Absensi"])
-def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
+async def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Depends(get_db), current_user: models.Akun = Depends(get_current_user)):
     if current_user.role != models.RoleEnum.guru:
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat mengakses")
     guru = _get_guru_or_403(db, current_user.id)
@@ -1057,7 +1057,7 @@ def simpan_absensi_batch(payload: schemas.AbsensiBatchRequest, db: Session = Dep
     for ab in hasil:
         db.refresh(ab)
     if hasil:
-        crud.kirim_notif_absensi_batch(db, payload.id_kelas, str(payload.tanggal), current_user.nama, hasil[0].id_absensi, hasil_absensi=hasil)
+        await crud.kirim_notif_absensi_batch(db, payload.id_kelas, str(payload.tanggal), current_user.nama, hasil[0].id_absensi, hasil_absensi=hasil)
     return hasil
 
 
@@ -1108,7 +1108,7 @@ def get_ringkasan_absensi(
 # =============================================================================
 
 @app.post("/catatan/", response_model=schemas.CatatanHarianOut, status_code=201, tags=["Catatan Harian"])
-def buat_catatan(
+async def buat_catatan(
     payload: schemas.CatatanHarianCreate,
     db: Session = Depends(get_db),
     current_user: models.Akun = Depends(get_current_user),
@@ -1117,7 +1117,7 @@ def buat_catatan(
         raise HTTPException(status_code=403, detail="Hanya guru yang dapat membuat catatan")
     guru = _get_guru_or_403(db, current_user.id)
     catatan = crud.create_catatan_harian(db, payload, guru.id_guru)
-    crud.kirim_notif_catatan(db, catatan, current_user.nama)
+    await crud.kirim_notif_catatan(db, catatan, current_user.nama)
     return crud._build_catatan_out(catatan)
 
 
@@ -1499,7 +1499,7 @@ def hapus_laporan(id_laporan: int, db: Session = Depends(get_db), current_user: 
 
 
 @router_laporan.put("/{id_laporan}/verifikasi")
-def verifikasi_laporan(
+async def verifikasi_laporan(
     id_laporan: int,
     payload: schemas.LaporanVerifikasi,
     db: Session = Depends(get_db),
@@ -1515,9 +1515,8 @@ def verifikasi_laporan(
     if not lap:
         raise HTTPException(status_code=404, detail="Laporan tidak ditemukan")
 
-    # Kirim notifikasi ke wali hanya saat status menjadi 'verifikasi'
     if payload.status == models.StatusLaporanEnum.verifikasi:
-        crud.kirim_notif_laporan_terverifikasi(
+        await crud.kirim_notif_laporan_terverifikasi(
             db,
             lap,
             nama_admin=current_user.nama,

@@ -47,7 +47,7 @@ def get_kelas_ids_by_guru(db: Session, id_guru: int) -> List[int]:
 def set_guru_kelas(db: Session, id_guru: int, list_id_kelas: Optional[List[int]]) -> None:
     db.query(models.GuruKelas).filter(models.GuruKelas.id_guru == id_guru).delete()
     if list_id_kelas:
-        unique_ids = list(dict.fromkeys(list_id_kelas))[:2] 
+        unique_ids = list(dict.fromkeys(list_id_kelas))[:2]
         for id_kelas in unique_ids:
             db.add(models.GuruKelas(id_guru=id_guru, id_kelas=id_kelas))
     db.flush()
@@ -98,7 +98,7 @@ def kirim_fcm(fcm_token: str, tipe: str, judul: str, isi: str,
                 "isi"  : isi,
                 "role" : role,
             },
-            topic=f"user_{fcm_token}", 
+            topic=f"user_{fcm_token}",
             android=messaging.AndroidConfig(
                 priority="high",
                 ttl=86400,
@@ -118,7 +118,7 @@ def get_akun(db: Session, id: int) -> Optional[models.Akun]:
 
 def get_akun_by_username(db: Session, username: str) -> Optional[models.Akun]:
     akun = db.query(models.Akun).filter(models.Akun.username == username).first()
-    if akun and akun.username != username: 
+    if akun and akun.username != username:
         return None
     return akun
 
@@ -539,8 +539,9 @@ def _buat_notif(db: Session, id: int, judul: str, pesan: str,
 
 
 # ─── Titik 1: Notif Pesan ─────────────────────────────────────────────────────
+# FIX: async def + await langsung, hapus loop.create_task
 
-def kirim_notif_pesan(
+async def kirim_notif_pesan(
     db: Session,
     id_akun_penerima: int,
     nama_pengirim: str,
@@ -561,13 +562,9 @@ def kirim_notif_pesan(
     db.commit()
     db.refresh(notif)
 
-    # ── WebSocket (app online) ────────────────────────────────────────────────
+    # ── WebSocket: await langsung, tidak perlu loop.create_task ──────────────
     if payload_ws and ws_manager.aktif(id_akun_penerima):
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(ws_manager.kirim_ke_akun(id_akun_penerima, payload_ws))
-        except RuntimeError:
-            pass
+        await ws_manager.kirim_ke_akun(id_akun_penerima, payload_ws)
 
     # ── FCM (app offline) ─────────────────────────────────────────────────────
     akun_penerima = get_akun(db, id_akun_penerima)
@@ -575,7 +572,7 @@ def kirim_notif_pesan(
         isi_pesan = payload_ws.get("isi_pesan", "") if payload_ws else ""
         role_penerima = akun_penerima.role.value if akun_penerima.role else ""
         kirim_fcm(
-            fcm_token = str(akun_penerima.id), 
+            fcm_token = str(akun_penerima.id),
             tipe      = "pesan",
             judul     = f"Pesan dari {nama_pengirim}",
             isi       = isi_pesan,
@@ -586,8 +583,9 @@ def kirim_notif_pesan(
 
 
 # ─── Titik 2: Notif Absensi Batch ────────────────────────────────────────────
+# FIX: async def + await langsung, hapus loop.create_task
 
-def kirim_notif_absensi_batch(
+async def kirim_notif_absensi_batch(
     db: Session,
     id_kelas: int,
     tanggal_str: str,
@@ -625,7 +623,7 @@ def kirim_notif_absensi_batch(
                     f"telah diperbarui.",
                     models.TipeNotifEnum.absensi, id_absensi_ref)
 
-        # ── WebSocket (app online) ────────────────────────────────────────────
+        # ── WebSocket: await langsung ─────────────────────────────────────────
         ab = absensi_by_siswa.get(siswa.id_siswa)
         if ab and ws_manager.aktif(wali.id_akun):
             payload = {
@@ -638,11 +636,7 @@ def kirim_notif_absensi_batch(
                     "nama_guru":  nama_guru,
                 }
             }
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
-            except RuntimeError:
-                pass
+            await ws_manager.kirim_ke_akun(wali.id_akun, payload)
 
         # ── FCM (app offline) ─────────────────────────────────────────────────
         akun_wali = get_akun(db, wali.id_akun)
@@ -660,8 +654,9 @@ def kirim_notif_absensi_batch(
 
 
 # ─── Titik 3: Notif Catatan ───────────────────────────────────────────────────
+# FIX: async def + await langsung, hapus loop.create_task
 
-def kirim_notif_catatan(
+async def kirim_notif_catatan(
     db: Session,
     catatan: models.CatatanHarian,
     nama_guru: str,
@@ -669,7 +664,7 @@ def kirim_notif_catatan(
     from app.websocket_manager import ws_manager
 
     target   = catatan.target
-    pasangan = [] 
+    pasangan = []
 
     if target == models.TargetCatatanEnum.satu_siswa:
         if catatan.id_siswa:
@@ -694,7 +689,7 @@ def kirim_notif_catatan(
                 if siswa:
                     pasangan.append((wali, siswa))
 
-    else: 
+    else:
         siswa_list = (db.query(models.Siswa)
                       .filter(models.Siswa.id_wali_siswa.isnot(None)).all())
         id_wali_set = {s.id_wali_siswa for s in siswa_list}
@@ -723,7 +718,7 @@ def kirim_notif_catatan(
             catatan.id_catatan,
         )
 
-        # ── WebSocket (app online) ────────────────────────────────────────────
+        # ── WebSocket: await langsung ─────────────────────────────────────────
         if ws_manager.aktif(wali.id_akun):
             payload = {
                 "type": "catatan_baru",
@@ -735,11 +730,7 @@ def kirim_notif_catatan(
                     "tanggal":    str(catatan.tanggal),
                 },
             }
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, payload))
-            except RuntimeError:
-                pass
+            await ws_manager.kirim_ke_akun(wali.id_akun, payload)
 
         # ── FCM (app offline) ─────────────────────────────────────────────────
         akun_wali = get_akun(db, wali.id_akun)
@@ -756,8 +747,9 @@ def kirim_notif_catatan(
 
 
 # ─── Titik 4: Notif Laporan Terverifikasi ─────────────────────────────────────
+# FIX: async def + await langsung, hapus loop.create_task
 
-def kirim_notif_laporan_terverifikasi(
+async def kirim_notif_laporan_terverifikasi(
     db: "Session",
     laporan: "models.Laporan",
     nama_admin: str,
@@ -768,7 +760,6 @@ def kirim_notif_laporan_terverifikasi(
     if laporan.id_kelas is None:
         return
 
-    # Kirim HANYA jika kedua jenis laporan (absensi + catatan) sudah verif
     semua_periode = (
         db.query(models.Laporan)
         .filter(
@@ -837,13 +828,9 @@ def kirim_notif_laporan_terverifikasi(
             laporan.id_laporan,
         )
 
-        # ── WebSocket (app online) ────────────────────────────────────────────
+        # ── WebSocket: await langsung ─────────────────────────────────────────
         if ws_manager.aktif(wali.id_akun):
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(ws_manager.kirim_ke_akun(wali.id_akun, ws_payload))
-            except RuntimeError:
-                pass
+            await ws_manager.kirim_ke_akun(wali.id_akun, ws_payload)
 
         # ── FCM (app offline) ─────────────────────────────────────────────────
         akun_wali = get_akun(db, wali.id_akun)

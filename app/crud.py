@@ -29,11 +29,11 @@ def hash_password(password: str) -> str:
 def verify_password(plain: str, hashed: str) -> bool:
     return hash_password(plain) == hashed
 
-def get_akun_by_username(db: Session, username: str) -> Optional[models.Akun]:
-    akun = db.query(models.Akun).filter(models.Akun.username == username).first()
-    if akun and akun.username != username:  
-        return None
-    return akun
+def authenticate_akun(db: Session, username: str, password: str) -> Optional[models.Akun]:
+    akun = get_akun_by_username(db, username)
+    if akun and verify_password(password, akun.password):
+        return akun
+    return None
 
 def get_kelas_ids_by_guru(db: Session, id_guru: int) -> List[int]:
     rows = (
@@ -117,7 +117,10 @@ def get_akun(db: Session, id: int) -> Optional[models.Akun]:
     return db.get(models.Akun, id)
 
 def get_akun_by_username(db: Session, username: str) -> Optional[models.Akun]:
-    return db.query(models.Akun).filter(models.Akun.username == username).first()
+    akun = db.query(models.Akun).filter(models.Akun.username == username).first()
+    if akun and akun.username != username: 
+        return None
+    return akun
 
 def get_all_akun(db: Session, skip=0, limit=100) -> List[models.Akun]:
     return db.query(models.Akun).offset(skip).limit(limit).all()

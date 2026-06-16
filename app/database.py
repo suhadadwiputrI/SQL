@@ -8,7 +8,7 @@ def _build_url() -> str:
         return url
     host = os.getenv("MYSQLHOST", "localhost")
     user = os.getenv("MYSQLUSER", "root")
-    pwd  = os.getenv("MYSQLPASSWORD", "12345678")
+    pwd  = os.getenv("MYSQLPASSWORD", "")
     db   = os.getenv("MYSQLDATABASE", "smartschool_db")
     port = os.getenv("MYSQLPORT", "3306")
     return f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}"

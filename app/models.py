@@ -48,6 +48,10 @@ class Akun(Base):
     kepala_sekolah = relationship("KepalaSekolah", back_populates="akun", uselist=False, cascade="all, delete-orphan")
     wali_siswa     = relationship("WaliSiswa",     back_populates="akun", uselist=False, cascade="all, delete-orphan")
 
+    @property
+    def jawaban(self):
+        return self.reset_password[0].jawaban if self.reset_password else None
+
     pesan_terkirim = relationship("Pesan", foreign_keys="[Pesan.id_pengirim]",
                                   back_populates="pengirim", cascade="all, delete-orphan")
     pesan_diterima = relationship("Pesan", foreign_keys="[Pesan.id_penerima]",

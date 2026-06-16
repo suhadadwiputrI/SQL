@@ -65,6 +65,7 @@ class AkunOut(AkunBase):
     id:          int
     first_login: bool
     device_id:   Optional[str]      = None
+    jawaban:     Optional[str]      = None 
     created_at:  Optional[datetime] = None
     updated_at:  Optional[datetime] = None
 

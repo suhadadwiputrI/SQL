@@ -13,7 +13,9 @@ def _build_url() -> str:
     port = os.getenv("MYSQLPORT", "3306")
     return f"mysql+pymysql://{user}:{pwd}@{host}:{port}/{db}"
 
-engine = create_engine(_build_url(), pool_pre_ping=True, pool_recycle=3600)
+_url = _build_url()
+print(f"DEBUG: DATABASE_URL = {_url}")  # Add this to see what's being used
+engine = create_engine(_url, pool_pre_ping=True, pool_recycle=3600)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 

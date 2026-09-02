@@ -52,6 +52,21 @@ os.makedirs(FOTO_DIR, exist_ok=True)
 async def lifespan(app):
     # Startup: create database tables
     Base.metadata.create_all(bind=engine)
+
+    # Startup: seed akun admin default + kelas default
+    crud.init_firebase()
+    db = next(get_db())
+    try:
+        if not crud.get_akun_by_username(db, "TkQoulansadid"):
+            crud.create_admin_with_akun(db, schemas.AdminCreate(username="TkQoulansadid", nama="Admin"))
+            logging.info("Akun DEFAULT dibuat")
+        for id_k, nama_k in [(1, "TK A"), (2, "TK B")]:
+            if not db.get(models.Kelas, id_k):
+                db.add(models.Kelas(id_kelas=id_k, nama_kelas=nama_k))
+        db.commit()
+    finally:
+        db.close()
+
     yield
     # Shutdown
     engine.dispose()
@@ -153,26 +168,6 @@ def _cek_wali_akses_siswa(db: Session, current_user: models.Akun, id_siswa: int)
         if not wali or wali.id_siswa != id_siswa:
             raise HTTPException(status_code=403, detail="Akses ditolak")
 
-
-# =============================================================================
-# Startup
-# =============================================================================
-
-@app.on_event("startup")
-def seed_master_admin():
-    crud.init_firebase()  
-    
-    db = next(get_db())
-    try:
-        if not crud.get_akun_by_username(db, "TkQoulansadid"):
-            crud.create_admin_with_akun(db, schemas.AdminCreate(username="TkQoulansadid", nama="Admin"))
-            logging.info("Akun DEFAULT dibuat")
-        for id_k, nama_k in [(1, "TK A"), (2, "TK B")]:
-            if not db.get(models.Kelas, id_k):
-                db.add(models.Kelas(id_kelas=id_k, nama_kelas=nama_k))
-        db.commit()
-    finally:
-        db.close()
 
 # =============================================================================
 # Root

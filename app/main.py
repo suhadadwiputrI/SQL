@@ -47,12 +47,19 @@ ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24
 FOTO_DIR                    = "static/foto"
 
 os.makedirs(FOTO_DIR, exist_ok=True)
-Base.metadata.create_all(bind=engine)
+@asynccontextmanager
+async def lifespan(app):
+    # Startup: create database tables
+    Base.metadata.create_all(bind=engine)
+    yield
+    # Shutdown
+    engine.dispose()
 
 app = FastAPI(
     title="Smart School API",
     description="REST API Sistem Informasi Sekolah",
     version="1.4.0",
+    lifespan=lifespan,
 )
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.add_middleware(
